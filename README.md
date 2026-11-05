@@ -266,7 +266,9 @@ this app uses neither sandbox/iCloud nor other profile-bound capabilities.
 
 CI builds/tests and packages universal local-only artifacts without signing secrets.
 A `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which imports the Developer
-ID into a temporary keychain, runs the test wrapper, signs the universal app and
+ID into a temporary keychain (added to the user keychain search list, since `codesign`
+does not find identities through `--keychain` alone), verifies the identity can sign
+before building, runs the test wrapper, signs the universal app and
 Sparkle helpers with hardened runtime/timestamps, notarizes and staples the app,
 packages/signs/notarizes/staples the DMG, and checks Gatekeeper acceptance. Signing
 material is cleaned up even on failure. `CFBundleVersion` is the full-history
