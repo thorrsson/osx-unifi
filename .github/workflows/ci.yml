@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Runner images ship several Xcodes and the default is not always the newest.
+      # -runFirstLaunch installs the bundled packages; without them actool's
+      # AssetCatalogAgent cannot load and compiling the app icon dies mid-connection.
+      - name: Select the newest Xcode
+        run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Using $newest"
+          sudo xcode-select -s "$newest"
+          sudo xcodebuild -runFirstLaunch
+          echo "DEVELOPER_DIR=$newest/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Test
+        run: bash Scripts/test.sh
+      - name: Test universal packaging and Sparkle appcast with throwaway keys
+        run: ruby Scripts/test-packaging.rb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UniFiDesktop-local-only
+          path: dist/*.dmg
+          if-no-files-found: error

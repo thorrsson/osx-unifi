@@ -1,0 +1,127 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-26
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Runner images ship several Xcodes and the default is not always the newest.
+      # -runFirstLaunch installs the bundled packages; without them actool's
+      # AssetCatalogAgent cannot load and compiling the app icon dies mid-connection.
+      - name: Select the newest Xcode
+        run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Using $newest"
+          sudo xcode-select -s "$newest"
+          sudo xcodebuild -runFirstLaunch
+          echo "DEVELOPER_DIR=$newest/Contents/Developer" >> "$GITHUB_ENV"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Validate version and release source
+        id: version
+        run: |
+          set -euo pipefail
+          source Scripts/lib/common.sh
+          version="$(resolve_version "$GITHUB_REF_NAME")"
+          git merge-base --is-ancestor HEAD origin/main
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Import Developer ID into a temporary keychain
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ -n "$CERTIFICATE_P12" && -n "$CERTIFICATE_PASSWORD" ]] || {
+            echo "Missing MACOS_CERTIFICATE_P12 or MACOS_CERTIFICATE_PASSWORD" >&2
+            exit 1
+          }
+          keychain="$RUNNER_TEMP/unifi-build.keychain-db"
+          certificate="$RUNNER_TEMP/unifi-certificate.p12"
+          password="$(uuidgen)"
+          echo "::add-mask::$password"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$certificate"
+          openssl pkcs12 -in "$certificate" -passin env:CERTIFICATE_PASSWORD -noout || {
+            echo "Invalid PKCS#12, wrong password, or legacy RC2 encryption; re-export with modern encryption." >&2
+            exit 1
+          }
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -f pkcs12 -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          rm -f "$certificate"
+          echo "UNIFI_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Build, sign, notarize, staple and package
+        env:
+          UNIFI_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          UNIFI_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          NOTARY_API_KEY_P8: ${{ secrets.NOTARY_API_KEY_P8 }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          UNIFI_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.UNIFI_SPARKLE_PUBLIC_ED_KEY }}
+          UNIFI_SPARKLE_FEED_URL: ${{ vars.UNIFI_SPARKLE_FEED_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash Scripts/release.sh "$VERSION"
+      - name: Discard signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/unifi-certificate.p12"
+          if [[ -f "$RUNNER_TEMP/unifi-build.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/unifi-build.keychain-db"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UniFiDesktop-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/appcast.xml
+          if-no-files-found: error
+      - name: Publish verified release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
+            --generate-notes "dist/UniFiDesktop-$VERSION.dmg" "dist/UniFiDesktop-$VERSION.dmg.sha256"
+      - name: Check out feed publication branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .appcast-publish
+          persist-credentials: false
+      - name: Publish signed update feed after assets are live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cp dist/appcast.xml .appcast-publish/appcast.xml
+          cd .appcast-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          if ! git diff --cached --quiet -- appcast.xml; then
+            git commit -m "Publish appcast for $RELEASE_TAG"
+            gh auth setup-git
+            git push origin HEAD:main
+          fi
