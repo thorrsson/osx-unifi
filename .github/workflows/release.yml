@@ -101,7 +101,6 @@ jobs:
           NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
           NOTARY_API_KEY_P8: ${{ secrets.NOTARY_API_KEY_P8 }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          UNIFI_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.UNIFI_SPARKLE_PUBLIC_ED_KEY }}
           UNIFI_SPARKLE_FEED_URL: ${{ vars.UNIFI_SPARKLE_FEED_URL }}
           VERSION: ${{ steps.version.outputs.version }}
         run: bash Scripts/release.sh "$VERSION"

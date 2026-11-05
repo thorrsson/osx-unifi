@@ -6,6 +6,8 @@ require_release_credentials
 [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]] || die "SPARKLE_PRIVATE_KEY is required for releases."
 [[ -n "${UNIFI_SPARKLE_PUBLIC_ED_KEY:-}" || ( -z "${UNIFI_SPARKLE_PUBLIC_ED_KEY+x}" && -s Resources/sparkle_ed_public_key.txt ) ]] \
     || die "A Sparkle public key is required for releases."
+public_key="${UNIFI_SPARKLE_PUBLIC_ED_KEY:-$(cat Resources/sparkle_ed_public_key.txt 2>/dev/null)}"
+ruby Scripts/check-sparkle-keypair.rb "$public_key"
 [[ -z "$(git status --porcelain)" ]] || die "Release from a clean checkout."
 export UNIFI_UNIVERSAL=1
 bash Scripts/test.sh
