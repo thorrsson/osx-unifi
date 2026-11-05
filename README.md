@@ -42,6 +42,19 @@ are sent back unchanged. Items that only the web UI can edit say so and link to 
 Built-in (system-defined) items are read-only. Destructive changes ask for
 confirmation. No automatic changes or background polling are performed.
 
+## Install
+
+Download the latest notarized DMG from
+[Releases](https://github.com/thorrsson/osx-unifi/releases/latest), or use Homebrew:
+
+```sh
+brew install --cask thorrsson/tap/unifi-desktop
+```
+
+The cask lives in [thorrsson/homebrew-tap](https://github.com/thorrsson/homebrew-tap).
+Homebrew versions that require trusting third-party taps need `brew trust thorrsson/tap`
+once. The cask declares `auto_updates`, so Sparkle, not `brew upgrade`, keeps it current.
+
 ## Build and run
 
 Running the app requires macOS 14+. Development needs Xcode (Swift 5.9+) and Ruby 3.2+
@@ -244,8 +257,9 @@ Before the first release:
    with `bash Scripts/sparkle-keys.sh export .sparkle/private-key.txt`.
    Never regenerate a key already shipped to users.
 3. Copy `.env.example` to `.env`, set owner-only permissions (`chmod 600 .env`),
-   and populate the certificate/password/identity/team, notary API key trio, and
-   Sparkle private key. Encode `.p12` and `.p8` files as single-line base64.
+   and populate the certificate/password/identity/team, notary API key trio,
+   Sparkle private key, and `HOMEBREW_TAP_TOKEN` (a fine-grained token limited to
+   `thorrsson/homebrew-tap` with Contents read and write). Encode `.p12` and `.p8` files as single-line base64.
    The Sparkle private key uses Sparkle's exported text unchanged. The public key is
    not a secret: releases embed the committed key, and `Scripts/release.sh` fails
    before building if `SPARKLE_PRIVATE_KEY` does not derive that key.
@@ -289,6 +303,10 @@ signed appcast is committed to `main`. The default public feed is
 The workflow token must be allowed to commit that feed under the repository's
 branch rules. For custom feed hosting, publish `dist/appcast.xml` at that URL;
 private raw GitHub URLs are not usable by installed clients.
+After the feed, the workflow renders `Casks/unifi-desktop.rb` with
+`Scripts/render-cask.rb VERSION SHA256` from the published DMG checksum and pushes it
+to [thorrsson/homebrew-tap](https://github.com/thorrsson/homebrew-tap) using
+`HOMEBREW_TAP_TOKEN`; a missing token fails the release before building.
 Local builds without a public key explicitly disable updates. No update private
 key, real release credentials, or live controller API key belongs in Git.
 Setting `UNIFI_SPARKLE_PUBLIC_ED_KEY=''` explicitly disables updates even when the
