@@ -40,6 +40,7 @@ jobs:
       - name: Package local-only universal DMG
         env:
           UNIFI_UNIVERSAL: '1'
+          UNIFI_SPARKLE_PUBLIC_ED_KEY: ''
         run: bash Scripts/build-app.sh 0.1.0 && bash Scripts/make-dmg.sh 0.1.0
       - uses: actions/upload-artifact@v4
         with:

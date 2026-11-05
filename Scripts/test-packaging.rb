@@ -2,6 +2,7 @@ require 'openssl'
 require 'base64'
 require 'fileutils'
 require 'open3'
+require 'json'
 
 Dir.chdir(File.expand_path('..', __dir__))
 def run!(environment, *arguments)
@@ -39,6 +40,12 @@ begin
   run!(environment, 'bash', 'Scripts/make-dmg.sh', '0.1.0')
   run!(environment, 'bash', 'Scripts/generate-appcast.sh', '0.1.0')
   puts 'Sparkle appcast generation and embedded-key signature verification passed.'
+  run!(environment.merge('UNIFI_SPARKLE_PUBLIC_ED_KEY' => ''), 'bash', 'Scripts/build-app.sh', '0.1.0')
+  plist, status = Open3.capture2e('plutil', '-convert', 'json', '-o', '-', "#{contents}/Info.plist")
+  abort "error: could not read local-only app configuration: #{plist}" unless status.success?
+  settings = JSON.parse(plist)
+  abort 'error: local-only app unexpectedly enables Sparkle updates.' if settings.keys.any? { |name| name.start_with?('SU') }
+  puts 'Explicitly empty public key disables updates despite the committed public key.'
 ensure
   FileUtils.remove_entry_secure(fixture) if File.directory?(fixture)
 end
