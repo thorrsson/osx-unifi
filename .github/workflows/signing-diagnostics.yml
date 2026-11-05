@@ -16,7 +16,7 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           IDENT: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           umask 077
           keychain="$RUNNER_TEMP/unifi-build.keychain-db"
           certificate="$RUNNER_TEMP/unifi-certificate.p12"
