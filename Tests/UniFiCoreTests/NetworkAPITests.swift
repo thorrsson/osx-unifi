@@ -111,6 +111,20 @@ final class NetworkAPITests: XCTestCase {
         ])
     }
 
+    func testGatewayDetectionFallsBackToModelWhenFeatureIsMissing() throws {
+        func device(_ model: String, _ features: [String]) throws -> Device {
+            let json = #"{"id":"\#(id)","name":"x","model":"\#(model)","state":"ONLINE","features":[\#(features.map { "\"\($0)\"" }.joined(separator: ","))]}"#
+            return try JSONDecoder().decode(Device.self, from: Data(json.utf8))
+        }
+        for model in ["UDM Pro", "UDM SE", "UDR7", "UCG Ultra", "UXG Max", "USG-Pro-4", "UX", "UX7", "EFG", "UDW"] {
+            XCTAssertTrue(try device(model, ["switching"]).isGateway, model)
+        }
+        for model in ["USW Pro 24", "U6 Pro", "UDB", "UCK G2", "UAP-AC-Lite"] {
+            XCTAssertFalse(try device(model, ["switching", "accessPoint"]).isGateway, model)
+        }
+        XCTAssertTrue(try device("Third Party", ["gateway"]).isGateway)
+    }
+
     func testGenuineEmptyPageSucceeds() async throws {
         let sites = try await api(StubTransport([
             .init(status: 200, body: page("[]", count: 0, total: 0))
