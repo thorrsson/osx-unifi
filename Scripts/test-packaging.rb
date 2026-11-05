@@ -46,6 +46,23 @@ begin
   settings = JSON.parse(plist)
   abort 'error: local-only app unexpectedly enables Sparkle updates.' if settings.keys.any? { |name| name.start_with?('SU') }
   puts 'Explicitly empty public key disables updates despite the committed public key.'
+  store_environment = environment.merge('UNIFI_APP_STORE_SIGNING_IDENTITY' => nil, 'UNIFI_APP_STORE_PROFILE' => nil)
+  run!(store_environment, 'bash', 'Scripts/build-app-store.sh', '0.1.0')
+  store = "#{fixture}/Lanyard.app/Contents"
+  run!(store_environment, 'lipo', "#{store}/MacOS/UniFiDesktop", '-verify_arch', 'arm64', 'x86_64')
+  plist, status = Open3.capture2e('plutil', '-convert', 'json', '-o', '-', "#{store}/Info.plist")
+  abort "error: could not read App Store Info.plist: #{plist}" unless status.success?
+  settings = JSON.parse(plist)
+  expected = { 'CFBundleDisplayName' => 'Lanyard', 'CFBundleName' => 'Lanyard', 'ITSAppUsesNonExemptEncryption' => false,
+               'LSApplicationCategoryType' => 'public.app-category.utilities', 'CFBundleIconName' => 'AppIcon' }
+  expected.each { |key, value| abort "error: App Store Info.plist #{key} is #{settings[key].inspect}." unless settings[key] == value }
+  abort 'error: App Store build configures Sparkle.' if settings.keys.any? { |name| name.start_with?('SU') }
+  abort 'error: App Store build bundles Sparkle.' if File.exist?("#{store}/Frameworks")
+  abort 'error: App Store build is missing its privacy manifest.' unless File.file?("#{store}/Resources/PrivacyInfo.xcprivacy")
+  entitlements, status = Open3.capture2e('codesign', '-d', '--entitlements', '-', '--xml', "#{fixture}/Lanyard.app")
+  abort 'error: App Store build is not sandboxed.' unless status.success? && entitlements.include?('com.apple.security.app-sandbox')
+  abort 'error: App Store installer package was not built.' unless File.file?("#{fixture}/Lanyard-0.1.0.pkg")
+  puts 'Sandboxed App Store variant, branding, privacy manifest, and installer package verified.'
 ensure
   FileUtils.remove_entry_secure(fixture) if File.directory?(fixture)
 end

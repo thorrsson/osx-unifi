@@ -257,4 +257,97 @@ class ReleaseScriptsTest < Minitest::Test
     assert_includes manifest, helper[/SPARKLE_VERSION="([^"]+)"/, 1]
     assert_includes manifest, helper[/SPARKLE_ZIP_SHA256="([^"]+)"/, 1]
   end
+  APP_STORE_ENV = {
+    'UNIFI_APP_STORE_SIGNING_IDENTITY' => 'Apple Distribution: Example (ABCDE12345)',
+    'UNIFI_APP_STORE_INSTALLER_IDENTITY' => '3rd Party Mac Developer Installer: Example (ABCDE12345)',
+    'UNIFI_TEAM_ID' => 'ABCDE12345',
+    'UNIFI_APP_STORE_PROFILE' => nil,
+    'UNIFI_PACKAGING_SMOKE' => '1'
+  }.freeze
+
+  # Signs a synthetic profile with a throwaway key; the build script decodes it but never trusts it.
+  def provisioning_profile(directory, app_id: 'ABCDE12345.com.thorrsson.osx-unifi', expires: '2099-01-01T00:00:00Z', devices: false)
+    key = OpenSSL::PKey::RSA.new(2048)
+    certificate = OpenSSL::X509::Certificate.new
+    certificate.version = 2
+    certificate.serial = 1
+    certificate.subject = certificate.issuer = OpenSSL::X509::Name.parse('/CN=Synthetic Test Profile')
+    certificate.public_key = key.public_key
+    certificate.not_before = Time.now - 60
+    certificate.not_after = Time.now + 3600
+    certificate.sign(key, OpenSSL::Digest.new('SHA256'))
+    device_entry = devices ? '<key>ProvisionedDevices</key><array><string>00000000-0000000000000000</string></array>' : ''
+    plist = <<~PLIST
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0"><dict>
+        <key>ExpirationDate</key><date>#{expires}</date>
+        <key>Entitlements</key><dict><key>com.apple.application-identifier</key><string>#{app_id}</string></dict>
+        #{device_entry}
+      </dict></plist>
+    PLIST
+    signed = OpenSSL::PKCS7.sign(certificate, key, plist, [], OpenSSL::PKCS7::BINARY)
+    path = File.join(directory, 'profile.provisionprofile')
+    File.binwrite(path, signed.to_der)
+    path
+  end
+
+  def test_app_store_build_requires_distribution_credentials_before_building
+    { 'UNIFI_APP_STORE_INSTALLER_IDENTITY' => [nil, 'Mac Installer Distribution identity'],
+      'UNIFI_TEAM_ID' => ['abc', '10-character Apple Developer Team ID'],
+      'UNIFI_APP_STORE_PROFILE' => ['/nonexistent.provisionprofile', 'Mac App Store provisioning profile'] }.each do |name, (value, message)|
+      _, err, status = run_script('build-app-store.sh', '1.0.0', env: APP_STORE_ENV.merge(name => value))
+      refute status.success?, name
+      assert_includes err, message
+    end
+  end
+
+  def test_app_store_build_rejects_profiles_for_other_apps_or_channels
+    Dir.mktmpdir do |directory|
+      garbage = File.join(directory, 'garbage.provisionprofile')
+      File.write(garbage, 'not a profile')
+      cases = {
+        garbage => 'not a readable provisioning profile',
+        provisioning_profile(directory, app_id: 'ABCDE12345.com.example.other') => 'not ABCDE12345.com.thorrsson.osx-unifi'
+      }
+      cases.each do |profile, message|
+        _, err, status = run_script('build-app-store.sh', '1.0.0', env: APP_STORE_ENV.merge('UNIFI_APP_STORE_PROFILE' => profile))
+        refute status.success?
+        assert_includes err, message
+      end
+      profile = provisioning_profile(directory, devices: true)
+      _, err, status = run_script('build-app-store.sh', '1.0.0', env: APP_STORE_ENV.merge('UNIFI_APP_STORE_PROFILE' => profile))
+      refute status.success?
+      assert_includes err, 'create a Mac App Store distribution profile'
+      profile = provisioning_profile(directory, expires: '2020-01-01T00:00:00Z')
+      _, err, status = run_script('build-app-store.sh', '1.0.0', env: APP_STORE_ENV.merge('UNIFI_APP_STORE_PROFILE' => profile))
+      refute status.success?
+      assert_includes err, 'expired on 2020-01-01'
+    end
+  end
+
+  def test_app_store_upload_requires_credentials_and_an_installer_signature
+    clean = %w[NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID NOTARY_API_KEY_P8].to_h { |name| [name, nil] }
+    Dir.mktmpdir do |directory|
+      pkg = File.join(directory, 'Lanyard-1.0.0.pkg')
+      File.write(pkg, 'unsigned')
+      _, err, status = run_script('upload-app-store.sh', pkg, env: clean)
+      refute status.success?
+      assert_includes err, 'Set NOTARY_API_KEY_ID'
+      credentials = clean.transform_values { 'fake' }
+      _, err, status = run_script('upload-app-store.sh', pkg, env: credentials)
+      refute status.success?
+      assert_includes err, 'not signed'
+    end
+  end
+
+  def test_app_store_resources_are_sandboxed_and_private
+    entitlements, status = Open3.capture2('plutil', '-convert', 'json', '-o', '-', File.join(ROOT, 'Resources/AppStore.entitlements'))
+    assert status.success?
+    assert_equal({ 'com.apple.security.app-sandbox' => true, 'com.apple.security.network.client' => true }, JSON.parse(entitlements))
+    privacy, status = Open3.capture2('plutil', '-convert', 'json', '-o', '-', File.join(ROOT, 'Resources/PrivacyInfo.xcprivacy'))
+    assert status.success?
+    manifest = JSON.parse(privacy)
+    refute manifest['NSPrivacyTracking']
+    assert_empty manifest['NSPrivacyCollectedDataTypes']
+  end
 end
