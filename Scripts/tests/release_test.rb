@@ -115,6 +115,22 @@ class ReleaseScriptsTest < Minitest::Test
     end
   end
 
+  def test_committed_sparkle_public_key_is_valid
+    key = File.read(File.join(ROOT, 'Resources/sparkle_ed_public_key.txt')).strip
+    assert_equal 32, Base64.strict_decode64(key).bytesize
+  end
+
+  def test_release_refuses_explicitly_disabled_updates
+    _, err, status = run_script('release.sh', '1.0.0', env: {
+      'UNIFI_SIGNING_IDENTITY' => 'synthetic-test-identity',
+      'UNIFI_NOTARY_PROFILE' => 'synthetic-test-profile',
+      'SPARKLE_PRIVATE_KEY' => 'synthetic-test-key',
+      'UNIFI_SPARKLE_PUBLIC_ED_KEY' => ''
+    })
+    refute status.success?
+    assert_includes err, 'A Sparkle public key is required for releases.'
+  end
+
   def test_appcast_checks_signature_size_and_embedded_public_key
     Dir.mktmpdir('unifi-release-test') do |dir|
       archive = File.join(dir, 'UniFiDesktop-1.0.0.dmg')

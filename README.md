@@ -238,9 +238,9 @@ Before the first release:
 1. Create a GitHub **release** environment with required reviewers and deployment
    restrictions for `v*` tags. The setup script never creates or weakens protection.
    The workflow also requires the tagged commit to be on `main`.
-2. Generate this app's own Sparkle key using `bash Scripts/sparkle-keys.sh generate`.
-   It uses Keychain account `com.thorrsson.osx-unifi.sparkle`, not another app's key.
-   Commit `Resources/sparkle_ed_public_key.txt`. Back up the private key securely
+2. This app's Sparkle public key is committed in `Resources/sparkle_ed_public_key.txt`.
+   The matching private key is stored in the maintainer's Keychain account
+   `com.thorrsson.osx-unifi.sparkle`, not another app's account. Back it up securely
    with `bash Scripts/sparkle-keys.sh export .sparkle/private-key.txt`.
    Never regenerate a key already shipped to users.
 3. Copy `.env.example` to `.env`, set owner-only permissions (`chmod 600 .env`),
@@ -287,6 +287,9 @@ branch rules. For custom feed hosting, publish `dist/appcast.xml` at that URL;
 private raw GitHub URLs are not usable by installed clients.
 Local builds without a public key explicitly disable updates. No update private
 key, real release credentials, or live controller API key belongs in Git.
+Setting `UNIFI_SPARKLE_PUBLIC_ED_KEY=''` explicitly disables updates even when the
+public key file exists; leaving it unset uses the committed public key. CI uses
+the empty override for its local-only DMG. Release builds reject that override.
 
 ## Verification and release gates
 
@@ -305,6 +308,8 @@ using throwaway Sparkle keys, confirms the bundle carries the compiled app icon
 (`Assets.car`, `AppIcon.icns` and the `Info.plist` keys naming it), runs the real
 appcast generator, verifies the
 signature against the embedded public key, and removes its isolated fixtures.
+It also rebuilds with an explicitly empty public key and confirms that updates
+stay disabled despite the committed public key.
 It never touches the release Keychain account or normal `dist/` output.
 
 Local builds and universal DMG packaging can be checked without credentials.

@@ -4,7 +4,7 @@ source "$(dirname "$0")/lib/common.sh"
 version="$(resolve_version "${1:?Pass a release version}")"
 require_release_credentials
 [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]] || die "SPARKLE_PRIVATE_KEY is required for releases."
-[[ -n "${UNIFI_SPARKLE_PUBLIC_ED_KEY:-}" || -s Resources/sparkle_ed_public_key.txt ]] \
+[[ -n "${UNIFI_SPARKLE_PUBLIC_ED_KEY:-}" || ( -z "${UNIFI_SPARKLE_PUBLIC_ED_KEY+x}" && -s Resources/sparkle_ed_public_key.txt ) ]] \
     || die "A Sparkle public key is required for releases."
 [[ -z "$(git status --porcelain)" ]] || die "Release from a clean checkout."
 export UNIFI_UNIVERSAL=1

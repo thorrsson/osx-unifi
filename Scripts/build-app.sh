@@ -36,7 +36,8 @@ fi
     || die "actool did not produce Assets.car and AppIcon.icns from $icon."
 /usr/libexec/PlistBuddy -c "Merge $icon_plist" "$app/Contents/Info.plist"
 public_key="${UNIFI_SPARKLE_PUBLIC_ED_KEY:-}"
-if [[ -z "$public_key" && -f Resources/sparkle_ed_public_key.txt ]]; then
+# An explicitly empty override disables updates in local-only artifacts.
+if [[ -z "${UNIFI_SPARKLE_PUBLIC_ED_KEY+x}" && -f Resources/sparkle_ed_public_key.txt ]]; then
     public_key="$(cat Resources/sparkle_ed_public_key.txt)"
 fi
 feed="${UNIFI_SPARKLE_FEED_URL:-https://raw.githubusercontent.com/thorrsson/osx-unifi/main/appcast.xml}"
