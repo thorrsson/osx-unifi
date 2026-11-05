@@ -31,6 +31,7 @@ Retry action instead of an empty list, while the rest of the site stays usable.
 - **Hotspot**: create vouchers in bulk with duration, guest and usage limits, copy
   codes, delete selected vouchers, or delete all expired vouchers.
 - Open the matching page of the controller's web UI for anything the app doesn't edit.
+- **Try Demo**: explore every page against a built-in sample console without a controller.
 - Install signed updates through Sparkle, with Check for Updates in the app menu
   and update preferences in Settings.
 
@@ -134,6 +135,10 @@ it, or edit the SVGs under `Resources/AppIcon.icon/Assets/` directly.
 3. Choose a site. Use each page's toolbar, context menus (Control-click a row) or
    double-click to create, edit and delete. Refresh (Command-R) reloads the Network
    version, sites and the selected site.
+
+No controller? **Try Demo** on the sign-in screen opens a sample console ("Harbor House")
+entirely in memory. Edits work but are discarded when you exit the demo, nothing is sent
+over the network, and Keychain and saved preferences are left untouched.
 
 Keys are saved in this Mac's non-synchronizing Keychain after version/sites load.
 Only the controller address is saved in UserDefaults. Leave the key field blank
@@ -279,8 +284,8 @@ required values fail before upload. Secret values travel over stdin, never CLI
 arguments; output contains names only. `UNIFI_SPARKLE_FEED_URL` is an environment
 **variable**, the remaining settings are environment secrets. `-f` selects a
 file and `-R owner/repo` explicitly selects another repository. No existing app's
-credentials are read or copied automatically. No provisioning profile is needed:
-this app uses neither sandbox/iCloud nor other profile-bound capabilities.
+credentials are read or copied automatically. The Developer ID build needs no
+provisioning profile; only the [Mac App Store](#mac-app-store) build does.
 
 CI builds/tests and packages universal local-only artifacts without signing secrets.
 A `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which imports the Developer
@@ -314,6 +319,63 @@ key, real release credentials, or live controller API key belongs in Git.
 Setting `UNIFI_SPARKLE_PUBLIC_ED_KEY=''` explicitly disables updates even when the
 public key file exists; leaving it unset uses the committed public key. CI uses
 the empty override for its local-only DMG. Release builds reject that override.
+
+## Mac App Store
+
+The App Store build is listed as **Lanyard** (subtitle "Console for UniFi networks") and
+is otherwise the same app. The DMG and Homebrew builds keep the UniFi Desktop name.
+It differs from the Developer ID build in these ways:
+
+- It runs in the App Sandbox, with only the outgoing network connections entitlement.
+- It leaves out Sparkle (`UNIFI_APP_STORE=1` drops the dependency and its UI); the App
+  Store delivers updates.
+- It includes a privacy manifest (`Resources/PrivacyInfo.xcprivacy`): no tracking, no
+  collected data, and `UserDefaults` used only by the app itself.
+- Its Info.plist adds the display name, the Utilities category, and
+  `ITSAppUsesNonExemptEncryption = NO` (the app only uses Apple's HTTPS).
+
+One-time setup in the Apple Developer portal and App Store Connect:
+
+1. Register the App ID `com.thorrsson.osx-unifi` (no extra capabilities) if it isn't already.
+2. Create an **Apple Distribution** certificate and a **Mac Installer Distribution**
+   certificate, and install both in your keychain.
+3. Create a **Mac App Store Connect** distribution provisioning profile for the App ID.
+4. In App Store Connect, create a macOS app named Lanyard with that bundle ID. Fill in
+   the subtitle, a description, keywords, support and privacy policy URLs, screenshots,
+   and the App Privacy answer **Data Not Collected**.
+5. In the App Review notes, say that the app manages a self-hosted UniFi controller and
+   that reviewers can use **Try Demo** on the sign-in screen without an account or
+   hardware. Mention that the app is not affiliated with Ubiquiti.
+
+Build, check locally, and upload:
+
+```sh
+# Local check: ad-hoc signed and sandboxed, cannot be uploaded
+bash Scripts/build-app-store.sh 1.2.0
+
+UNIFI_APP_STORE_SIGNING_IDENTITY="Apple Distribution: Your Name (TEAMID)" \
+UNIFI_APP_STORE_INSTALLER_IDENTITY="3rd Party Mac Developer Installer: Your Name (TEAMID)" \
+UNIFI_APP_STORE_PROFILE=~/Downloads/Lanyard_Mac_App_Store.provisionprofile \
+UNIFI_TEAM_ID=TEAMID \
+bash Scripts/build-app-store.sh 1.2.0
+
+bash Scripts/upload-app-store.sh dist/Lanyard-1.2.0.pkg
+```
+
+The build script produces `dist/Lanyard.app` and `dist/Lanyard-X.Y.Z.pkg` as a universal
+binary. Before building, it checks that the profile is for this team and bundle ID, is a
+Mac App Store profile (not development or Developer ID), and hasn't expired. It then
+embeds the profile, adds the application and team identifier entitlements, and verifies
+the sandbox entitlement in the signature. The installer identity is listed as either
+"3rd Party Mac Developer Installer" or "Mac Installer Distribution", depending on when
+it was created. `CFBundleVersion` is the commit count (override with `UNIFI_BUILD_NUMBER`);
+App Store Connect rejects a build number it has already seen for the same version.
+
+The upload script reuses the release's `NOTARY_API_KEY_ID`, `NOTARY_API_ISSUER_ID`, and
+`NOTARY_API_KEY_P8` App Store Connect API key (the key needs the Developer role or
+higher). It runs `altool --validate-app` before `--upload-package`. You can also upload
+the package with Apple's Transporter app. After processing, choose the build in App Store
+Connect and submit it for review.
 
 ## Verification and release gates
 

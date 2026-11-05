@@ -56,6 +56,10 @@ Treat the key like a password: it can change your network. Use a **local** Netwo
 
 If macOS asks whether **UniFi Desktop** can find devices on your local network, click **Allow**. The app can't reach your console without Local Network access.
 
+<div class="callout" markdown="1">
+No console handy? Click **Try Demo** to explore every page with a sample site. Changes you make in the demo are discarded when you choose **Account › Exit Demo**, and nothing is sent over the network.
+</div>
+
 ## 4. Review the console's certificate
 
 A UniFi console normally uses a self-signed certificate that macOS doesn't trust. UniFi Desktop never turns off certificate checks. Instead, it stops the connection **before your API key is sent** and asks you to review the certificate.
