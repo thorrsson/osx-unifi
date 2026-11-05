@@ -72,6 +72,26 @@ final class NetworkModel: ObservableObject {
     /// How long a change confirmation stays visible. Errors stay until dismissed.
     var confirmationLifetime: Duration = .seconds(6)
     private var confirmationDismissal: Task<Void, Never>?
+    /// How often the dashboard refreshes gateway statistics while it is visible.
+    var statisticsPollInterval: Duration = .seconds(NetworkModel.defaultStatisticsPollSeconds)
+    static let statisticsPollRange = 1...30
+    static let defaultStatisticsPollSeconds = 3
+    static func clampedPollSeconds(_ seconds: Int) -> Int {
+        min(max(seconds, statisticsPollRange.lowerBound), statisticsPollRange.upperBound)
+    }
+    /// The user's chosen statistics refresh interval, in seconds. Saved, and kept within `statisticsPollRange`.
+    @Published var statisticsPollSeconds = NetworkModel.defaultStatisticsPollSeconds {
+        didSet {
+            // Reassigning a @Published value re-runs didSet, so only do it when clamping changes the value.
+            let clamped = Self.clampedPollSeconds(statisticsPollSeconds)
+            guard clamped == statisticsPollSeconds else {
+                statisticsPollSeconds = clamped
+                return
+            }
+            statisticsPollInterval = .seconds(statisticsPollSeconds)
+            defaults.set(statisticsPollSeconds, forKey: "statisticsPollSeconds")
+        }
+    }
     @Published private(set) var applicationVersion: String?
     @Published private(set) var lastRefreshed: Date?
     private var api: (any NetworkAPI)?
@@ -94,6 +114,11 @@ final class NetworkModel: ObservableObject {
         self.defaults = defaults
         self.makeAPI = makeAPI
         address = defaults.string(forKey: "controllerOrigin") ?? ""
+        if let saved = defaults.object(forKey: "statisticsPollSeconds") as? Int {
+            let seconds = Self.clampedPollSeconds(saved)
+            statisticsPollSeconds = seconds
+            statisticsPollInterval = .seconds(seconds)
+        }
     }
 
     var controller: Controller? { try? Controller(address) }
@@ -330,6 +355,28 @@ final class NetworkModel: ObservableObject {
         do { state = .loaded(try await api.deviceStatistics(siteID: site.id, deviceID: gateway.id)) }
         catch { state = .failed(Self.describe(error)) }
         guard generation == loadGeneration, selectedSite?.id == site.id else { return }
+        gatewayStatistics = state
+    }
+
+    /// Refreshes the gateway statistics every `statisticsPollInterval` until the calling task is
+    /// cancelled. Only statistics are read; inventory sections are not reloaded.
+    func pollGatewayStatistics() async {
+        while !Task.isCancelled {
+            do { try await Task.sleep(for: statisticsPollInterval) } catch { return }
+            await updateGatewayStatistics()
+        }
+    }
+
+    /// Reloads the gateway statistics in place, without showing a loading state. Skipped while a
+    /// full load is in progress, since that load fetches statistics itself.
+    func updateGatewayStatistics() async {
+        guard connected, !isLoading, let api, let site = selectedSite,
+              let gateway = devices.value?.first(where: \.isGateway) else { return }
+        let generation = loadGeneration
+        let state: LoadState<DeviceStatistics>
+        do { state = .loaded(try await api.deviceStatistics(siteID: site.id, deviceID: gateway.id)) }
+        catch { state = .failed(Self.describe(error)) }
+        guard !Task.isCancelled, generation == loadGeneration, !isLoading, selectedSite?.id == site.id else { return }
         gatewayStatistics = state
     }
 

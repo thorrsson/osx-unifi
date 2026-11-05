@@ -14,7 +14,7 @@ UniFi Desktop shows the selected site in a sidebar layout like the UniFi console
 - **Edit** a row by double-clicking it, or choose **Edit…** from its Control-click menu. The editor opens in a panel on the right. Click **Apply Changes** to save or **Cancel** to discard.
 - **Turn items on or off** with the switch in the **Enabled** column.
 - **Delete** from the Control-click menu, or from the editor. Deleting always asks you to confirm first.
-- **Refresh** everything from the console with the toolbar button or <kbd>⌘</kbd><kbd>R</kbd>. The app doesn't poll in the background, so refresh to see changes made elsewhere.
+- **Refresh** everything from the console with the toolbar button or <kbd>⌘</kbd><kbd>R</kbd>. The app doesn't reload everything in the background, so refresh to see changes made elsewhere. Only the Dashboard's gateway statistics update on their own.
 
 Built-in (system-defined) items, such as the console's own firewall policies and zones, are shown for reference and can't be edited.
 
@@ -40,7 +40,7 @@ Some changes can interrupt your own connection to the console, for example resta
   <img class="screenshot" src="{{ '/assets/screenshots/dashboard.png' | relative_url }}" alt="Dashboard with gateway status, WAN interfaces and summary counts" loading="lazy" width="1280" height="820">
 </figure>
 
-Gateway health and statistics, WAN interfaces, and counts of devices, clients, networks and WiFi networks for the selected site. Click a summary to go to its page.
+Gateway health and statistics, WAN interfaces, and counts of devices, clients, networks and WiFi networks for the selected site. While the Dashboard is open, the gateway's throughput, uptime, CPU and memory update every 3 seconds. To change this, open the app settings with **UniFi Desktop > Settings** (<kbd>⌘</kbd><kbd>,</kbd>) and choose any interval from 1 to 30 seconds. The counts update when you refresh. Click a summary to go to its page.
 
 ## UniFi Devices
 

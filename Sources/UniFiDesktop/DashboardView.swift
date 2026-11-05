@@ -21,6 +21,15 @@ struct DashboardPage: View {
             .padding(20)
         }
         .background(Theme.background)
+        .task(id: PollKey(site: model.selectedSite?.id, seconds: model.statisticsPollSeconds)) {
+            await model.pollGatewayStatistics()
+        }
+    }
+
+    /// Restarts polling when the site or the chosen interval changes.
+    private struct PollKey: Hashable {
+        let site: UUID?
+        let seconds: Int
     }
 
     private var gateway: Device? { model.devices.value?.first(where: \.isGateway) }
