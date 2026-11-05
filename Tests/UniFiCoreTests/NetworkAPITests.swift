@@ -116,10 +116,14 @@ final class NetworkAPITests: XCTestCase {
             let json = #"{"id":"\#(id)","name":"x","model":"\#(model)","state":"ONLINE","features":[\#(features.map { "\"\($0)\"" }.joined(separator: ","))]}"#
             return try JSONDecoder().decode(Device.self, from: Data(json.utf8))
         }
-        for model in ["UDM Pro", "UDM SE", "UDR7", "UCG Ultra", "UXG Max", "USG-Pro-4", "UX", "UX7", "EFG", "UDW"] {
+        for model in [
+            "UDM Pro", "UDM SE", "UDM Pro SE", "UDM-Pro-SE", "UDMPROSE", "UDMSE", "UDM Pro Max",
+            "Dream Machine Pro SE", "Dream Router 7", "Cloud Gateway Ultra", "Gateway Max", "UniFi Express 7",
+            "UDR7", "UCG Ultra", "UXG Max", "USG-Pro-4", "USG3P", "UX", "UX7", "EFG", "UDW"
+        ] {
             XCTAssertTrue(try device(model, ["switching"]).isGateway, model)
         }
-        for model in ["USW Pro 24", "U6 Pro", "UDB", "UCK G2", "UAP-AC-Lite"] {
+        for model in ["USW Pro 24", "U6 Pro", "UDB", "UCK G2", "Cloud Key Gen2 Plus", "UAP-AC-Lite", "USW-Flex-Mini"] {
             XCTAssertFalse(try device(model, ["switching", "accessPoint"]).isGateway, model)
         }
         XCTAssertTrue(try device("Third Party", ["gateway"]).isGateway)
