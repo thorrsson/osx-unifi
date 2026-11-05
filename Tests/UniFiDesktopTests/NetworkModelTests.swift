@@ -759,6 +759,7 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertFalse(model.isBusy)
     }
 
+    #if !APP_STORE
     func testUpdaterRejectsIncompleteOrUnsafeConfiguration() {
         let key = Data(repeating: 1, count: 32).base64EncodedString()
         XCTAssertTrue(UpdaterModel.validConfiguration(feed: "https://example.com/appcast.xml", publicKey: key))
@@ -767,4 +768,5 @@ final class NetworkModelTests: XCTestCase {
         }
         XCTAssertFalse(UpdaterModel.validConfiguration(feed: "https://example.com", publicKey: "bad"))
     }
+    #endif
 }
