@@ -245,8 +245,10 @@ Before the first release:
    Never regenerate a key already shipped to users.
 3. Copy `.env.example` to `.env`, set owner-only permissions (`chmod 600 .env`),
    and populate the certificate/password/identity/team, notary API key trio, and
-   Sparkle private/public keys. Encode `.p12` and `.p8` files as single-line base64.
-   The Sparkle private key uses Sparkle's exported text unchanged.
+   Sparkle private key. Encode `.p12` and `.p8` files as single-line base64.
+   The Sparkle private key uses Sparkle's exported text unchanged. The public key is
+   not a secret: releases embed the committed key, and `Scripts/release.sh` fails
+   before building if `SPARKLE_PRIVATE_KEY` does not derive that key.
 4. Validate and then upload names/values:
 
 ```sh

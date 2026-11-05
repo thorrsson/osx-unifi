@@ -12,7 +12,7 @@ class ReleaseScriptsTest < Minitest::Test
   SETTINGS = %w[
     MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD MACOS_SIGNING_IDENTITY MACOS_TEAM_ID
     NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID NOTARY_API_KEY_P8
-    SPARKLE_PRIVATE_KEY UNIFI_SPARKLE_PUBLIC_ED_KEY UNIFI_SPARKLE_FEED_URL
+    SPARKLE_PRIVATE_KEY UNIFI_SPARKLE_FEED_URL
   ].freeze
 
   def run_script(script, *args, env: {})
@@ -129,6 +129,39 @@ class ReleaseScriptsTest < Minitest::Test
     })
     refute status.success?
     assert_includes err, 'A Sparkle public key is required for releases.'
+  end
+
+  def test_sparkle_keypair_check_rejects_a_mismatched_public_key
+    key = OpenSSL::PKey.generate_key('ED25519')
+    private_key = Base64.strict_encode64(key.private_to_der.byteslice(-32, 32))
+    public_key = Base64.strict_encode64(key.public_to_der.byteslice(-32, 32))
+    other = Base64.strict_encode64(OpenSSL::PKey.generate_key('ED25519').public_to_der.byteslice(-32, 32))
+    script = File.join(ROOT, 'Scripts/check-sparkle-keypair.rb')
+    _, err, status = Open3.capture3({ 'SPARKLE_PRIVATE_KEY' => private_key }, 'ruby', script, public_key)
+    assert status.success?, err
+    _, err, status = Open3.capture3({ 'SPARKLE_PRIVATE_KEY' => private_key }, 'ruby', script, other)
+    refute status.success?
+    assert_includes err, 'does not match'
+    refute_includes err, private_key
+    _, err, status = Open3.capture3({ 'SPARKLE_PRIVATE_KEY' => 'not-a-key' }, 'ruby', script, public_key)
+    refute status.success?
+    assert_includes err, 'Sparkle key check failed'
+  end
+
+  def test_appcast_without_signature_explains_key_mismatch
+    Dir.mktmpdir('unifi-release-test') do |dir|
+      archive = File.join(dir, 'UniFiDesktop-1.0.0.dmg')
+      File.binwrite(archive, 'synthetic archive')
+      feed = File.join(dir, 'appcast.xml')
+      File.write(feed, <<~XML)
+        <rss><channel><item><enclosure url="https://example.com/UniFiDesktop-1.0.0.dmg"
+        length="#{File.size(archive)}"/></item></channel></rss>
+      XML
+      key = Base64.strict_encode64(OpenSSL::PKey.generate_key('ED25519').public_to_der.byteslice(-32, 32))
+      _, err, status = Open3.capture3('ruby', File.join(ROOT, 'Scripts/verify-appcast.rb'), feed, archive, key)
+      refute status.success?
+      assert_includes err, 'no sparkle:edSignature'
+    end
   end
 
   def test_appcast_checks_signature_size_and_embedded_public_key
