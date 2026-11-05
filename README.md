@@ -40,7 +40,8 @@ current settings and change only the fields they show, so settings the app does 
 display (for example firewall traffic filters, schedules, or advanced WiFi options)
 are sent back unchanged. Items that only the web UI can edit say so and link to it.
 Built-in (system-defined) items are read-only. Destructive changes ask for
-confirmation. No automatic changes or background polling are performed.
+confirmation. No automatic changes are made. The only background polling is a read of
+the gateway's statistics every 3 seconds while the Dashboard is open.
 
 ## Install
 

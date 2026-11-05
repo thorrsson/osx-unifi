@@ -54,6 +54,8 @@ private actor ModelAPI: NetworkAPI {
     private(set) var calls: [String] = []
     private(set) var replacedBody: JSONValue?
     private(set) var appliedOrdering: FirewallPolicyOrdering?
+    private(set) var statisticsReads = 0
+    private var failStatistics = false
     let id = siteID
 
     func configure(
@@ -114,7 +116,12 @@ private actor ModelAPI: NetworkAPI {
     func wans(siteID: UUID) async throws -> [WAN] { [] }
     func pendingDevices() async throws -> [PendingDevice] { [] }
     func deviceDetails(siteID: UUID, deviceID: UUID) async throws -> DeviceDetails { throw NetworkAPIError.unsupported }
-    func deviceStatistics(siteID: UUID, deviceID: UUID) async throws -> DeviceStatistics { throw NetworkAPIError.unsupported }
+    func deviceStatistics(siteID: UUID, deviceID: UUID) async throws -> DeviceStatistics {
+        statisticsReads += 1
+        if failStatistics { throw URLError(.timedOut) }
+        return try decode(#"{"uptimeSec":\#(statisticsReads),"cpuUtilizationPct":12.5}"#)
+    }
+    func setFailStatistics(_ fail: Bool) { failStatistics = fail }
     func networkReferences(siteID: UUID, networkID: UUID) async throws -> [NetworkReference] { [] }
 
     func resource(_ kind: EditableResource, siteID: UUID, id: UUID) async throws -> JSONValue {
@@ -207,6 +214,51 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertFalse(model.isBusy)
         XCTAssertFalse(model.isLoading)
         XCTAssertNil(model.error)
+    }
+
+    func testPollingUpdatesGatewayStatisticsWithoutReloadingInventory() async throws {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.connect()
+        XCTAssertEqual(model.gatewayStatistics.value?.uptimeSec, 1)
+        let refreshed = model.lastRefreshed
+
+        model.statisticsPollInterval = .milliseconds(10)
+        let poll = Task { await model.pollGatewayStatistics() }
+        for _ in 0..<200 where (model.gatewayStatistics.value?.uptimeSec ?? 0) < 3 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        poll.cancel()
+        await poll.value
+
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(model.gatewayStatistics.value?.uptimeSec), 3)
+        XCTAssertEqual(model.lastRefreshed, refreshed, "Polling must not reload the inventory")
+        let reads = await api.statisticsReads
+        try await Task.sleep(for: .milliseconds(50))
+        let readsAfterCancel = await api.statisticsReads
+        XCTAssertEqual(reads, readsAfterCancel, "Polling stops when its task is cancelled")
+    }
+
+    func testStatisticsUpdateShowsFailureAndRecovers() async throws {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.connect()
+        await api.setFailStatistics(true)
+        await model.updateGatewayStatistics()
+        XCTAssertNotNil(model.gatewayStatistics.failure)
+        await api.setFailStatistics(false)
+        await model.updateGatewayStatistics()
+        XCTAssertNotNil(model.gatewayStatistics.value)
+    }
+
+    func testStatisticsUpdateDoesNothingWhenDisconnected() async {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.updateGatewayStatistics()
+        let reads = await api.statisticsReads
+        XCTAssertEqual(reads, 0)
+        XCTAssertNil(model.gatewayStatistics.value)
+        XCTAssertNil(model.gatewayStatistics.failure)
     }
 
     func testFailedSectionIsShownAsFailureWithoutHidingOtherSections() async throws {

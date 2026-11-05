@@ -21,6 +21,7 @@ struct DashboardPage: View {
             .padding(20)
         }
         .background(Theme.background)
+        .task(id: model.selectedSite?.id) { await model.pollGatewayStatistics() }
     }
 
     private var gateway: Device? { model.devices.value?.first(where: \.isGateway) }
