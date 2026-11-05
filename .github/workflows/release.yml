@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -29,7 +29,7 @@ jobs:
           sudo xcode-select -s "$newest"
           sudo xcodebuild -runFirstLaunch
           echo "DEVELOPER_DIR=$newest/Contents/Developer" >> "$GITHUB_ENV"
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: '3.3'
       - name: Validate version and release source
@@ -120,7 +120,7 @@ jobs:
           if [[ -f "$RUNNER_TEMP/unifi-build.keychain-db" ]]; then
             security delete-keychain "$RUNNER_TEMP/unifi-build.keychain-db"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: UniFiDesktop-${{ steps.version.outputs.version }}
           path: |
@@ -137,14 +137,14 @@ jobs:
           gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
             --generate-notes "dist/UniFiDesktop-$VERSION.dmg" "dist/UniFiDesktop-$VERSION.dmg.sha256"
       - name: Check out feed publication branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: main
           path: .appcast-publish
-          persist-credentials: false
+          # The main ruleset requires PRs; only this deploy key may push the feed directly.
+          ssh-key: ${{ secrets.APPCAST_DEPLOY_KEY }}
       - name: Publish signed update feed after assets are live
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -155,11 +155,10 @@ jobs:
           git add appcast.xml
           if ! git diff --cached --quiet -- appcast.xml; then
             git commit -m "Publish appcast for $RELEASE_TAG"
-            gh auth setup-git
             git push origin HEAD:main
           fi
       - name: Check out Homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: thorrsson/homebrew-tap
           ref: main
