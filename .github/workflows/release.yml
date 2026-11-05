@@ -67,7 +67,32 @@ jobs:
             -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
           rm -f "$certificate"
+          # codesign resolves identities only from the user search list; --keychain alone
+          # reports "no identity found" even when the keychain holds a valid identity.
+          existing=()
+          while IFS= read -r entry; do
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            entry="${entry#\"}"; entry="${entry%\"}"
+            if [[ -n "$entry" ]]; then existing+=("$entry"); fi
+          done < <(security list-keychains -d user)
+          printf '%s\n' "${existing[@]}" > "$RUNNER_TEMP/unifi-original-keychains.txt"
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
           echo "UNIFI_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Verify the signing identity resolves before building
+        env:
+          UNIFI_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$UNIFI_SIGNING_IDENTITY" ]] || { echo "Missing MACOS_SIGNING_IDENTITY" >&2; exit 1; }
+          security find-identity -v -p codesigning "$UNIFI_SIGNING_KEYCHAIN"
+          probe="$RUNNER_TEMP/unifi-signing-probe"
+          cp /usr/bin/true "$probe"
+          codesign --force --keychain "$UNIFI_SIGNING_KEYCHAIN" --sign "$UNIFI_SIGNING_IDENTITY" \
+            --timestamp=none "$probe" || {
+            echo "MACOS_SIGNING_IDENTITY does not resolve to a valid code-signing identity in the imported certificate." >&2
+            exit 1
+          }
+          rm -f "$probe"
       - name: Build, sign, notarize, staple and package
         env:
           UNIFI_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
@@ -84,6 +109,12 @@ jobs:
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/unifi-certificate.p12"
+          if [[ -s "$RUNNER_TEMP/unifi-original-keychains.txt" ]]; then
+            original=()
+            while IFS= read -r entry; do original+=("$entry"); done < "$RUNNER_TEMP/unifi-original-keychains.txt"
+            security list-keychains -d user -s "${original[@]}"
+            rm -f "$RUNNER_TEMP/unifi-original-keychains.txt"
+          fi
           if [[ -f "$RUNNER_TEMP/unifi-build.keychain-db" ]]; then
             security delete-keychain "$RUNNER_TEMP/unifi-build.keychain-db"
           fi
