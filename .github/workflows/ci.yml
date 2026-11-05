@@ -36,6 +36,11 @@ jobs:
         run: bash Scripts/test.sh
       - name: Test universal packaging and Sparkle appcast with throwaway keys
         run: ruby Scripts/test-packaging.rb
+      # The smoke test discards its throwaway-key output; this ad-hoc DMG has updates disabled.
+      - name: Package local-only universal DMG
+        env:
+          UNIFI_UNIVERSAL: '1'
+        run: bash Scripts/build-app.sh 0.1.0 && bash Scripts/make-dmg.sh 0.1.0
       - uses: actions/upload-artifact@v4
         with:
           name: UniFiDesktop-local-only
