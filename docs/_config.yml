@@ -1,0 +1,11 @@
+title: UniFi Desktop
+description: Help for installing UniFi Desktop and managing a UniFi network from your Mac.
+url: https://thorrsson.github.io
+baseurl: /osx-unifi
+markdown: kramdown
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default

@@ -1,0 +1,12 @@
+.build/
+.swiftpm/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+.sparkle/
+*.p12
+*.p8
+*.key
+*.provisionprofile
