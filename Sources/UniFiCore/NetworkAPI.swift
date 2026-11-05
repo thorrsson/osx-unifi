@@ -21,8 +21,13 @@ public struct Device: Decodable, Identifiable, Sendable, Hashable {
     // Some consoles (e.g. UDM Pro) omit the documented "gateway" feature, so fall back to known gateway model families.
     public var isGateway: Bool {
         features?.contains("gateway") == true
-            || model.range(of: #"^(UDM|UDR|UCG|UXG|USG|UDW|EFG|UX)(?![A-Za-z])"#, options: [.regularExpression, .caseInsensitive]) != nil
+            || model.range(of: Self.gatewayModelPattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
+
+    // Matches short names ("UDM SE"), internal codes ("UDMPROSE") and product names ("Dream Machine Pro SE").
+    // "UX" (Express) needs a non-letter after it so unrelated codes starting with UX are not caught.
+    private static let gatewayModelPattern =
+        #"^(UDM|UDR|UCG|UXG|USG|UDW|EFG)|^UX(?![A-Za-z])|Dream (Machine|Router|Wall)|\bGateway\b|\bExpress\b"#
     public var isSwitch: Bool { features?.contains("switching") == true }
     public var isAccessPoint: Bool { features?.contains("accessPoint") == true }
     public var isOnline: Bool { state == "ONLINE" }
