@@ -216,6 +216,44 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertNil(model.error)
     }
 
+    func testDemoLoadsSampleConsoleWithoutTouchingSavedCredentials() async throws {
+        let credentials = MemoryCredentials()
+        let certificates = MemoryCredentials()
+        credentials.key = "saved-key"
+        certificates.key = String(repeating: "ab", count: 32)
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set("https://controller.example", forKey: "controllerOrigin")
+        let model = NetworkModel(
+            keychain: credentials, certificates: certificates, defaults: defaults,
+            makeAPI: { _, _, _ in XCTFail("Demo mode must not contact a controller"); return ModelAPI() },
+            makeDemoAPI: { try DemoTransport.makeAPI() }
+        )
+        await model.connectDemo()
+        XCTAssertTrue(model.connected)
+        XCTAssertTrue(model.isDemo)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.selectedSite?.name, DemoTransport.siteName)
+        XCTAssertEqual(model.devices.value?.count, 5)
+        XCTAssertNotNil(model.gatewayStatistics.value)
+        XCTAssertTrue(model.isVersionVerified)
+        XCTAssertNil(model.webURL(), "The demo console has no web UI to open")
+
+        let policy = try XCTUnwrap(model.firewallPolicies.value?.first(where: { $0.name == "Allow IoT pairing" }))
+        accepted(await model.patch(policy, .logging(true)))
+        model.forgetKey()
+        model.forgetCertificate()
+        XCTAssertEqual(credentials.key, "saved-key")
+        XCTAssertNotNil(certificates.key)
+        XCTAssertNil(credentials.savedAccount)
+        XCTAssertEqual(model.address, "https://controller.example")
+        XCTAssertEqual(defaults.string(forKey: "controllerOrigin"), "https://controller.example")
+
+        model.disconnect()
+        XCTAssertFalse(model.connected)
+        XCTAssertFalse(model.isDemo)
+        XCTAssertNotNil(model.webURL())
+    }
+
     func testPollingUpdatesGatewayStatisticsWithoutReloadingInventory() async throws {
         let api = ModelAPI()
         let model = model(api)

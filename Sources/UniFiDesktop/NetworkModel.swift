@@ -67,6 +67,8 @@ final class NetworkModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var isLoading = false
     @Published private(set) var connected = false
+    /// True while browsing the built-in demo console. Nothing is read from or saved to Keychain or preferences.
+    @Published private(set) var isDemo = false
     @Published private(set) var error: String?
     @Published private(set) var notice: String?
     /// How long a change confirmation stays visible. Errors stay until dismissed.
@@ -100,6 +102,7 @@ final class NetworkModel: ObservableObject {
     private let certificates: any CredentialStore
     private let defaults: UserDefaults
     private let makeAPI: (Controller, String, CertificateFingerprint?) throws -> any NetworkAPI
+    private let makeDemoAPI: () throws -> any NetworkAPI
 
     init(
         keychain: any CredentialStore = KeychainStore(service: KeychainStore.apiKeyService),
@@ -107,12 +110,14 @@ final class NetworkModel: ObservableObject {
         defaults: UserDefaults = .standard,
         makeAPI: @escaping (Controller, String, CertificateFingerprint?) throws -> any NetworkAPI = {
             try IntegrationV1API(controller: $0, apiKey: $1, trustedCertificate: $2)
-        }
+        },
+        makeDemoAPI: @escaping () throws -> any NetworkAPI = { try DemoTransport.makeAPI(latency: .milliseconds(150)) }
     ) {
         self.keychain = keychain
         self.certificates = certificates
         self.defaults = defaults
         self.makeAPI = makeAPI
+        self.makeDemoAPI = makeDemoAPI
         address = defaults.string(forKey: "controllerOrigin") ?? ""
         if let saved = defaults.object(forKey: "statisticsPollSeconds") as? Int {
             let seconds = Self.clampedPollSeconds(saved)
@@ -129,7 +134,7 @@ final class NetworkModel: ObservableObject {
 
     /// Opens the controller web UI for settings this app does not manage.
     func webURL(_ page: String = "dashboard") -> URL? {
-        guard let origin = controller?.origin else { return nil }
+        guard !isDemo, let origin = controller?.origin else { return nil }
         let site = selectedSite?.internalReference ?? "default"
         return URL(string: "\(origin.absoluteString)/network/\(site)/\(page)")
     }
@@ -185,6 +190,35 @@ final class NetworkModel: ObservableObject {
         }
     }
 
+    /// Opens the built-in demo console, so the app can be explored without a UniFi controller.
+    /// Changes are kept in memory and discarded on disconnect.
+    func connectDemo() async {
+        guard !isBusy else { return }
+        isBusy = true
+        error = nil
+        notice = nil
+        certificateRequest = nil
+        clearInventory()
+        defer { isBusy = false }
+        do {
+            let client = try makeDemoAPI()
+            let info = try await client.info()
+            let loadedSites = try await client.sites()
+            api = client
+            sites = loadedSites
+            isDemo = true
+            connected = true
+            applicationVersion = info.applicationVersion
+            if let first = loadedSites.first {
+                selectedSite = first
+                await loadInventory(first, using: client)
+            }
+        } catch {
+            clearInventory()
+            self.error = "The demo could not be opened. \(Self.describe(error))"
+        }
+    }
+
     private func pinnedCertificate(for account: String) throws -> CertificateFingerprint? {
         guard let stored = try certificates.read(account: account) else { return nil }
         guard let fingerprint = CertificateFingerprint(hex: stored) else { throw CertificateStoreError.unreadable }
@@ -226,7 +260,7 @@ final class NetworkModel: ObservableObject {
     }
 
     func forgetCertificate() {
-        guard !isBusy else { return }
+        guard !isBusy, !isDemo else { return }
         do {
             let origin = try Controller(address).origin.absoluteString
             try certificates.delete(account: origin)
@@ -247,7 +281,7 @@ final class NetworkModel: ObservableObject {
     }
 
     func forgetKey() {
-        guard !isBusy else { return }
+        guard !isBusy, !isDemo else { return }
         do {
             let controller = try Controller(address)
             try keychain.delete(account: controller.origin.absoluteString)
@@ -420,6 +454,7 @@ final class NetworkModel: ObservableObject {
         loadGeneration += 1
         api = nil
         connected = false
+        isDemo = false
         isLoading = false
         selectedSite = nil
         sites = []

@@ -85,6 +85,14 @@ struct RootView: View {
     }
 }
 
+enum AppInfo {
+    /// The App Store build is branded differently, so the name always comes from the bundle.
+    static var name: String {
+        let info = Bundle.main.infoDictionary
+        return info?["CFBundleDisplayName"] as? String ?? info?["CFBundleName"] as? String ?? "UniFi Desktop"
+    }
+}
+
 struct ConnectView: View {
     @EnvironmentObject private var model: NetworkModel
 
@@ -99,7 +107,7 @@ struct ConnectView: View {
                         .frame(width: 48, height: 48)
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("UniFi Desktop").font(.title2.weight(.semibold))
+                        Text(AppInfo.name).font(.title2.weight(.semibold))
                         Text("Sign in to your UniFi console").foregroundStyle(Theme.secondary)
                     }
                 }
@@ -126,6 +134,10 @@ struct ConnectView: View {
                     Label(notice, systemImage: "info.circle").font(.callout).foregroundStyle(Theme.secondary)
                 }
                 HStack {
+                    Button("Try Demo") { Task { await model.connectDemo() } }
+                        .controlSize(.large)
+                        .disabled(model.isBusy)
+                        .help("Explore the app with a sample console. Nothing is sent over the network.")
                     if model.isBusy { ProgressView().controlSize(.small) }
                     Spacer()
                     Button {
@@ -243,8 +255,11 @@ struct ConsoleView: View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
             HStack(spacing: 6) {
-                Circle().fill(Theme.green).frame(width: 7, height: 7)
-                Text(model.controller?.origin.host() ?? "Console").font(.caption.weight(.medium))
+                Circle().fill(model.isDemo ? Theme.warning : Theme.green).frame(width: 7, height: 7)
+                Text(model.isDemo ? "Demo console" : model.controller?.origin.host() ?? "Console").font(.caption.weight(.medium))
+            }
+            if model.isDemo {
+                Text("Sample data. Changes are discarded when you exit.").font(.caption2).foregroundStyle(Theme.tertiary)
             }
             if let version = model.applicationVersion {
                 Text("Network \(version)").font(.caption2).foregroundStyle(Theme.tertiary)
@@ -287,19 +302,24 @@ struct ConsoleView: View {
             } label: {
                 Label("Open in Web UI", systemImage: "safari")
             }
+            .disabled(model.isDemo)
             .help("Open this page in the UniFi Network web UI for settings this app doesn't manage")
 
             Menu {
-                Section(model.controller?.origin.absoluteString ?? "") {
-                    Button("Disconnect") { model.disconnect() }
-                    Button("Forget API Key...") {
-                        confirm.ask("Forget API Key", "Remove the saved API key for this console from Keychain and disconnect?", action: "Forget Key") {
-                            model.forgetKey()
+                if model.isDemo {
+                    Button("Exit Demo") { model.disconnect() }
+                } else {
+                    Section(model.controller?.origin.absoluteString ?? "") {
+                        Button("Disconnect") { model.disconnect() }
+                        Button("Forget API Key...") {
+                            confirm.ask("Forget API Key", "Remove the saved API key for this console from Keychain and disconnect?", action: "Forget Key") {
+                                model.forgetKey()
+                            }
                         }
-                    }
-                    Button("Forget Trusted Certificate...") {
-                        confirm.ask("Forget Trusted Certificate", "Remove the trusted certificate for this console? You'll review it again the next time you connect.", action: "Forget Certificate") {
-                            model.forgetCertificate()
+                        Button("Forget Trusted Certificate...") {
+                            confirm.ask("Forget Trusted Certificate", "Remove the trusted certificate for this console? You'll review it again the next time you connect.", action: "Forget Certificate") {
+                                model.forgetCertificate()
+                            }
                         }
                     }
                 }

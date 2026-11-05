@@ -210,6 +210,7 @@ private struct DeviceInspector: View {
                     .disabled(!model.canMutate)
                 Spacer()
                 Button("Open in Web UI") { if let url = model.webURL("devices") { openURL(url) } }
+                    .disabled(model.isDemo)
                 Button("Restart...") { DeviceActions.restart(device, model: model, confirm: confirm) }
                     .disabled(!model.canMutate)
             }
