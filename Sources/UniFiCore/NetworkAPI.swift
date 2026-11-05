@@ -18,7 +18,11 @@ public struct Device: Decodable, Identifiable, Sendable, Hashable {
     public let firmwareUpdatable: Bool?
     public let features: [String]?
 
-    public var isGateway: Bool { features?.contains("gateway") == true }
+    // Some consoles (e.g. UDM Pro) omit the documented "gateway" feature, so fall back to known gateway model families.
+    public var isGateway: Bool {
+        features?.contains("gateway") == true
+            || model.range(of: #"^(UDM|UDR|UCG|UXG|USG|UDW|EFG|UX)(?![A-Za-z])"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
     public var isSwitch: Bool { features?.contains("switching") == true }
     public var isAccessPoint: Bool { features?.contains("accessPoint") == true }
     public var isOnline: Bool { state == "ONLINE" }
