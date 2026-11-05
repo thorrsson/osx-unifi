@@ -34,11 +34,14 @@ jobs:
           ruby-version: '3.3'
       - name: Validate version and release source
         id: version
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
           source Scripts/lib/common.sh
           version="$(resolve_version "$GITHUB_REF_NAME")"
           git merge-base --is-ancestor HEAD origin/main
+          [[ -n "$HOMEBREW_TAP_TOKEN" ]] || die "Missing HOMEBREW_TAP_TOKEN for publishing the Homebrew cask."
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Import Developer ID into a temporary keychain
         env:
@@ -153,5 +156,28 @@ jobs:
           if ! git diff --cached --quiet -- appcast.xml; then
             git commit -m "Publish appcast for $RELEASE_TAG"
             gh auth setup-git
+            git push origin HEAD:main
+          fi
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: thorrsson/homebrew-tap
+          ref: main
+          path: .homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Publish Homebrew cask after assets are live
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha256="$(awk '{print $1}' "dist/UniFiDesktop-$VERSION.dmg.sha256")"
+          mkdir -p .homebrew-tap/Casks
+          ruby Scripts/render-cask.rb "$VERSION" "$sha256" .homebrew-tap/Casks/unifi-desktop.rb
+          cd .homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/unifi-desktop.rb
+          if ! git diff --cached --quiet -- Casks/unifi-desktop.rb; then
+            git commit -m "unifi-desktop $VERSION"
             git push origin HEAD:main
           fi

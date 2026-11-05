@@ -24,6 +24,14 @@ You need:
 
 Releases are signed with a Developer ID and notarized by Apple. The first time you open the app, macOS asks you to confirm opening an app downloaded from the internet. You can also browse [all releases and release notes](https://github.com/thorrsson/osx-unifi/releases).
 
+### Or install with Homebrew
+
+```sh
+brew install --cask thorrsson/tap/unifi-desktop
+```
+
+If Homebrew refuses to load a cask from an untrusted tap, trust it once with `brew trust thorrsson/tap` and run the install again. The app keeps itself up to date (see [Software updates](#software-updates)), so `brew upgrade` normally has nothing to do. `brew uninstall --zap --cask unifi-desktop` also removes the app's preferences and caches; saved API keys and trusted certificates stay in your Keychain.
+
 ## 2. Create a local Network API key
 
 The app uses an API key created on your console, not your ui.com account password.

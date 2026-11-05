@@ -12,7 +12,7 @@ class ReleaseScriptsTest < Minitest::Test
   SETTINGS = %w[
     MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD MACOS_SIGNING_IDENTITY MACOS_TEAM_ID
     NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID NOTARY_API_KEY_P8
-    SPARKLE_PRIVATE_KEY UNIFI_SPARKLE_FEED_URL
+    SPARKLE_PRIVATE_KEY UNIFI_SPARKLE_FEED_URL HOMEBREW_TAP_TOKEN
   ].freeze
 
   def run_script(script, *args, env: {})
@@ -205,6 +205,49 @@ class ReleaseScriptsTest < Minitest::Test
     layers.each do |layer|
       asset = File.join(icon, 'Assets', layer.fetch('image-name'))
       assert File.file?(asset), "icon layer is missing its asset: #{asset}"
+    end
+  end
+
+  def render_cask(*args)
+    Open3.capture3('ruby', File.join(ROOT, 'Scripts/render-cask.rb'), *args, chdir: ROOT)
+  end
+
+  def test_cask_points_at_the_released_dmg_and_installed_app
+    sha = 'a' * 64
+    out, err, status = render_cask('v1.2.3', sha)
+    assert status.success?, err
+    assert_includes out, 'cask "unifi-desktop" do'
+    assert_includes out, 'version "1.2.3"'
+    assert_includes out, %(sha256 "#{sha}")
+    url = out[/^\s*url "([^"]+)"/, 1].gsub('#{version}', '1.2.3')
+    assert_equal 'https://github.com/thorrsson/osx-unifi/releases/download/v1.2.3/UniFiDesktop-1.2.3.dmg', url
+    assert_includes File.read(File.join(ROOT, 'Scripts/make-dmg.sh')), 'UniFiDesktop-$version.dmg'
+    plist = File.read(File.join(ROOT, 'Resources/Info.plist'))
+    bundle_name = plist[%r{<key>CFBundleName</key><string>([^<]+)</string>}, 1]
+    bundle_id = plist[%r{<key>CFBundleIdentifier</key><string>([^<]+)</string>}, 1]
+    assert_includes out, %(app "#{bundle_name}.app")
+    assert_includes out, "~/Library/Preferences/#{bundle_id}.plist"
+    assert_equal '14.0', plist[%r{<key>LSMinimumSystemVersion</key><string>([^<]+)</string>}, 1]
+    assert_includes out, 'depends_on macos: :sonoma'
+    assert_includes out, 'auto_updates true'
+    feed = File.read(File.join(ROOT, '.env.example'))[/^UNIFI_SPARKLE_FEED_URL=(.+)$/, 1]
+    assert_includes out, %(url "#{feed}")
+    _, _, syntax = Open3.capture3('ruby', '-c', stdin_data: out)
+    assert syntax.success?
+  end
+
+  def test_cask_writes_output_file_and_rejects_invalid_input
+    Dir.mktmpdir('unifi-release-test') do |dir|
+      path = File.join(dir, 'unifi-desktop.rb')
+      _, err, status = render_cask('1.0.0', 'b' * 64, path)
+      assert status.success?, err
+      assert_includes File.read(path), 'version "1.0.0"'
+    end
+    [['1.0', 'a' * 64], ['1.0.0', 'A' * 64], ['1.0.0', 'a' * 63], ['1.0.0"; system("x")', 'a' * 64], ['1.0.0']].each do |args|
+      out, err, status = render_cask(*args)
+      refute status.success?, args.inspect
+      assert_empty out
+      assert_includes err, 'error:'
     end
   end
 
