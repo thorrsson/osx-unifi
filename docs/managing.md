@@ -40,7 +40,7 @@ Some changes can interrupt your own connection to the console, for example resta
   <img class="screenshot" src="{{ '/assets/screenshots/dashboard.png' | relative_url }}" alt="Dashboard with gateway status, WAN interfaces and summary counts" loading="lazy" width="1280" height="820">
 </figure>
 
-Gateway health and statistics, WAN interfaces, and counts of devices, clients, networks and WiFi networks for the selected site. While the Dashboard is open, the gateway's throughput, uptime, CPU and memory update every 3 seconds. The counts update when you refresh. Click a summary to go to its page.
+Gateway health and statistics, WAN interfaces, and counts of devices, clients, networks and WiFi networks for the selected site. While the Dashboard is open, the gateway's throughput, uptime, CPU and memory update every 3 seconds. To change this, open the app settings with **UniFi Desktop > Settings** (<kbd>⌘</kbd><kbd>,</kbd>) and choose any interval from 1 to 30 seconds. The counts update when you refresh. Click a summary to go to its page.
 
 ## UniFi Devices
 

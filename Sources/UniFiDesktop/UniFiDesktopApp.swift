@@ -20,6 +20,13 @@ struct UniFiDesktopApp: App {
         }
         Settings {
             Form {
+                Section("Dashboard") {
+                    Stepper(value: $model.statisticsPollSeconds, in: NetworkModel.statisticsPollRange) {
+                        Text("Update gateway statistics every \(model.statisticsPollSeconds) \(model.statisticsPollSeconds == 1 ? "second" : "seconds")")
+                    }
+                    Text("Applies while the Dashboard is open. Other counts update when you refresh.")
+                        .font(.caption)
+                }
                 Section("Software Updates") {
                     if updater.isConfigured {
                         Toggle("Automatically check for updates", isOn: $updater.automaticallyChecks)

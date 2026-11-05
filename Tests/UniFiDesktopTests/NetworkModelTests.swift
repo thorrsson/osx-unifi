@@ -239,6 +239,30 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertEqual(reads, readsAfterCancel, "Polling stops when its task is cancelled")
     }
 
+    func testStatisticsPollIntervalDefaultsClampsAndPersists() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        func make() -> NetworkModel {
+            NetworkModel(keychain: MemoryCredentials(), certificates: MemoryCredentials(), defaults: defaults,
+                         makeAPI: { _, _, _ in ModelAPI() })
+        }
+        let model = make()
+        XCTAssertEqual(model.statisticsPollSeconds, 3)
+        XCTAssertEqual(model.statisticsPollInterval, .seconds(3))
+
+        model.statisticsPollSeconds = 0
+        XCTAssertEqual(model.statisticsPollSeconds, 1)
+        model.statisticsPollSeconds = 45
+        XCTAssertEqual(model.statisticsPollSeconds, 30)
+        model.statisticsPollSeconds = 10
+        XCTAssertEqual(model.statisticsPollInterval, .seconds(10))
+        XCTAssertEqual(make().statisticsPollSeconds, 10, "The chosen interval is saved")
+
+        defaults.set(500, forKey: "statisticsPollSeconds")
+        let restored = make()
+        XCTAssertEqual(restored.statisticsPollSeconds, 30, "An out-of-range saved value is clamped")
+        XCTAssertEqual(restored.statisticsPollInterval, .seconds(30))
+    }
+
     func testStatisticsUpdateShowsFailureAndRecovers() async throws {
         let api = ModelAPI()
         let model = model(api)
