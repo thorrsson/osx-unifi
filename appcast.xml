@@ -3,6 +3,14 @@
     <channel>
         <title>UniFi Desktop</title>
         <item>
+            <title>0.1.6</title>
+            <pubDate>Thu, 05 Nov 2026 18:38:47 +0000</pubDate>
+            <sparkle:version>21</sparkle:version>
+            <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thorrsson/osx-unifi/releases/download/v0.1.6/UniFiDesktop-0.1.6.dmg" length="6815739" type="application/octet-stream" sparkle:edSignature="QKAJtA9SWgpxlAwSxGvop0YhqqhVoZP5cXmvwA3OtTRej7YCohsDs8+QwJOZ3qPESeL4hCMo6fIZYH++eiGaDQ=="/>
+        </item>
+        <item>
             <title>0.1.5</title>
             <pubDate>Thu, 05 Nov 2026 18:04:10 +0000</pubDate>
             <sparkle:version>18</sparkle:version>
