@@ -50,4 +50,5 @@ compile_icon() {
 
 # The Mac App Store build is branded separately; the DMG and Homebrew builds keep the name above.
 APP_STORE_NAME="Lanyard"
+APP_STORE_BUNDLE_ID="com.thorrsson.lanyard"
 APP_STORE_APP="$DIST/$APP_STORE_NAME.app"

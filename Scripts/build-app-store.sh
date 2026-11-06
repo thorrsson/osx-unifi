@@ -8,7 +8,7 @@ version="$(resolve_version "${1:-0.1.0}")"
 build_number="${UNIFI_BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 [[ "$build_number" =~ ^[1-9][0-9]*$ ]] || die "Build number must be a positive integer."
 identity="${UNIFI_APP_STORE_SIGNING_IDENTITY:--}"
-bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Resources/Info.plist)"
+bundle_id="$APP_STORE_BUNDLE_ID"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/unifi-app-store.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
@@ -48,6 +48,7 @@ otool -L "$app/Contents/MacOS/UniFiDesktop" | grep -q Sparkle && die "The App St
 plist="$app/Contents/Info.plist"
 cp Resources/Info.plist "$plist"
 /usr/libexec/PlistBuddy \
+    -c "Set :CFBundleIdentifier $bundle_id" \
     -c "Set :CFBundleShortVersionString $version" \
     -c "Set :CFBundleVersion $build_number" \
     -c "Set :CFBundleName $APP_STORE_NAME" \

@@ -326,6 +326,9 @@ The App Store build is listed as **Lanyard** (subtitle "Console for UniFi networ
 is otherwise the same app. The DMG and Homebrew builds keep the UniFi Desktop name.
 It differs from the Developer ID build in these ways:
 
+- Its bundle ID is `com.thorrsson.lanyard`, so it is a separate app from
+  `com.thorrsson.osx-unifi` with its own sandboxed preferences. The two can be
+  installed side by side, and settings don't carry over between them.
 - It runs in the App Sandbox, with only the outgoing network connections entitlement.
 - It leaves out Sparkle (`UNIFI_APP_STORE=1` drops the dependency and its UI); the App
   Store delivers updates.
@@ -336,7 +339,7 @@ It differs from the Developer ID build in these ways:
 
 One-time setup in the Apple Developer portal and App Store Connect:
 
-1. Register the App ID `com.thorrsson.osx-unifi` (no extra capabilities) if it isn't already.
+1. Register the explicit App ID `com.thorrsson.lanyard` (no extra capabilities).
 2. Create an **Apple Distribution** certificate and a **Mac Installer Distribution**
    certificate, and install both in your keychain.
 3. Create a **Mac App Store Connect** distribution provisioning profile for the App ID.

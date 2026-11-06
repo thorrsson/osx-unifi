@@ -266,7 +266,7 @@ class ReleaseScriptsTest < Minitest::Test
   }.freeze
 
   # Signs a synthetic profile with a throwaway key; the build script decodes it but never trusts it.
-  def provisioning_profile(directory, app_id: 'ABCDE12345.com.thorrsson.osx-unifi', expires: '2099-01-01T00:00:00Z', devices: false)
+  def provisioning_profile(directory, app_id: 'ABCDE12345.com.thorrsson.lanyard', expires: '2099-01-01T00:00:00Z', devices: false)
     key = OpenSSL::PKey::RSA.new(2048)
     certificate = OpenSSL::X509::Certificate.new
     certificate.version = 2
@@ -286,7 +286,7 @@ class ReleaseScriptsTest < Minitest::Test
       </dict></plist>
     PLIST
     signed = OpenSSL::PKCS7.sign(certificate, key, plist, [], OpenSSL::PKCS7::BINARY)
-    path = File.join(directory, 'profile.provisionprofile')
+    path = File.join(directory, "#{app_id}-#{expires[0, 4]}-#{devices}.provisionprofile")
     File.binwrite(path, signed.to_der)
     path
   end
@@ -307,7 +307,8 @@ class ReleaseScriptsTest < Minitest::Test
       File.write(garbage, 'not a profile')
       cases = {
         garbage => 'not a readable provisioning profile',
-        provisioning_profile(directory, app_id: 'ABCDE12345.com.example.other') => 'not ABCDE12345.com.thorrsson.osx-unifi'
+        provisioning_profile(directory, app_id: 'ABCDE12345.com.example.other') => 'not ABCDE12345.com.thorrsson.lanyard',
+        provisioning_profile(directory, app_id: 'ABCDE12345.com.thorrsson.osx-unifi') => "for 'ABCDE12345.com.thorrsson.osx-unifi'"
       }
       cases.each do |profile, message|
         _, err, status = run_script('build-app-store.sh', '1.0.0', env: APP_STORE_ENV.merge('UNIFI_APP_STORE_PROFILE' => profile))

@@ -53,7 +53,8 @@ begin
   plist, status = Open3.capture2e('plutil', '-convert', 'json', '-o', '-', "#{store}/Info.plist")
   abort "error: could not read App Store Info.plist: #{plist}" unless status.success?
   settings = JSON.parse(plist)
-  expected = { 'CFBundleDisplayName' => 'Lanyard', 'CFBundleName' => 'Lanyard', 'ITSAppUsesNonExemptEncryption' => false,
+  expected = { 'CFBundleIdentifier' => 'com.thorrsson.lanyard', 'CFBundleDisplayName' => 'Lanyard', 'CFBundleName' => 'Lanyard',
+               'ITSAppUsesNonExemptEncryption' => false,
                'LSApplicationCategoryType' => 'public.app-category.utilities', 'CFBundleIconName' => 'AppIcon' }
   expected.each { |key, value| abort "error: App Store Info.plist #{key} is #{settings[key].inspect}." unless settings[key] == value }
   abort 'error: App Store build configures Sparkle.' if settings.keys.any? { |name| name.start_with?('SU') }
