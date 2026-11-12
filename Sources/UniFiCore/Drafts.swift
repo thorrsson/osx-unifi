@@ -35,6 +35,28 @@ public enum Address {
     static func list(_ value: String) -> [String] {
         value.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map(String.init)
     }
+
+    /// `address/prefix` in CIDR notation.
+    public static func isIPv4Subnet(_ value: String) -> Bool { isSubnet(value, address: isIPv4, maxPrefix: 32) }
+    public static func isIPv6Subnet(_ value: String) -> Bool { isSubnet(value, address: isIPv6, maxPrefix: 128) }
+
+    private static func isSubnet(_ value: String, address: (String) -> Bool, maxPrefix: Int) -> Bool {
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, let prefix = Int(parts[1]), (0...maxPrefix).contains(prefix) else { return false }
+        return address(String(parts[0]))
+    }
+
+    public static func isMAC(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        return parts.count == 6 && parts.allSatisfy { $0.count == 2 && $0.allSatisfy(\.isHexDigit) }
+    }
+
+    /// Splits `start-stop`; IPv6 addresses never contain `-`, so the first hyphen is the separator.
+    static func range(_ value: String) -> (start: String, stop: String)? {
+        let parts = value.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
 }
 
 private extension String {
@@ -539,4 +561,270 @@ public struct DNSPolicyDraft: Equatable, Sendable {
         draft.originalType = nil
         return draft.apply(to: [:])
     }
+}
+
+// MARK: - ACL rules
+
+/// One side of an ACL rule. `ANY` leaves the filter out so the rule matches all traffic on that side.
+public struct ACLEndpointDraft: Equatable, Sendable {
+    public static let any = "ANY"
+
+    public var type = ACLEndpointDraft.any
+    /// IPv4 addresses and subnets, or MAC addresses, separated by commas or new lines.
+    public var addresses = ""
+    public var networkIds: Set<UUID> = []
+    public var ports = ""
+    /// MAC rules only: match addresses sharing this many leading bits.
+    public var prefixLength: Int?
+
+    public init() {}
+
+    init(filter: JSONValue?) {
+        guard let filter, let type = filter["type"]?.string else { return }
+        self.type = type
+        addresses = (filter["ipAddressesOrSubnets"] ?? filter["macAddresses"])?.strings.joined(separator: ", ") ?? ""
+        networkIds = Set(filter["networkIds"]?.array?.compactMap(\.uuid) ?? [])
+        ports = filter["portFilter"]?.array?.compactMap(\.int).map(String.init).joined(separator: ", ") ?? ""
+        prefixLength = filter["prefixLength"]?.int
+    }
+
+    public static func types(forRule ruleType: String) -> [String] {
+        ruleType == "MAC" ? [any, "MAC_ADDRESSES"] : [any, "IP_ADDRESSES_OR_SUBNETS", "NETWORKS", "PORTS"]
+    }
+
+    public static func label(for type: String) -> String {
+        switch type {
+        case any: return "Any"
+        case "IP_ADDRESSES_OR_SUBNETS": return "IP Addresses or Subnets"
+        case "NETWORKS": return "Networks"
+        case "PORTS": return "Ports"
+        case "MAC_ADDRESSES": return "MAC Addresses"
+        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    public var usesAddresses: Bool { type == "IP_ADDRESSES_OR_SUBNETS" || type == "MAC_ADDRESSES" }
+    public var usesNetworks: Bool { type == "NETWORKS" }
+    public var usesPorts: Bool { ["IP_ADDRESSES_OR_SUBNETS", "NETWORKS", "PORTS"].contains(type) }
+    public var usesPrefixLength: Bool { type == "MAC_ADDRESSES" }
+
+    /// Unique ports in entry order, or `nil` when any entry is not a port number.
+    var portNumbers: [Int]? {
+        let values = Address.list(ports)
+        let numbers = values.compactMap { Int($0) }
+        guard numbers.count == values.count, numbers.allSatisfy((1...65535).contains) else { return nil }
+        return Array(Set(numbers)).sorted()
+    }
+
+    func errors(_ side: String, ruleType: String) -> [String] {
+        guard type != Self.any else { return [] }
+        let lower = side.lowercased()
+        guard Self.types(forRule: ruleType).contains(type) else { return ["Choose a \(lower) match for this rule type."] }
+        var errors: [String] = []
+        let values = Address.list(addresses)
+        switch type {
+        case "IP_ADDRESSES_OR_SUBNETS":
+            if values.isEmpty {
+                errors.append("Enter \(lower) IPv4 addresses or subnets.")
+            } else if !values.allSatisfy({ Address.isIPv4($0) || Address.isIPv4Subnet($0) }) {
+                errors.append("\(side) addresses must be IPv4 addresses or subnets such as 192.168.1.0/24.")
+            }
+        case "NETWORKS":
+            if networkIds.isEmpty { errors.append("Choose at least one \(lower) network.") }
+        case "PORTS":
+            if Address.list(ports).isEmpty { errors.append("Enter \(lower) ports.") }
+        case "MAC_ADDRESSES":
+            if values.isEmpty {
+                errors.append("Enter \(lower) MAC addresses.")
+            } else if !values.allSatisfy(Address.isMAC) {
+                errors.append("\(side) MAC addresses must look like aa:bb:cc:dd:ee:ff.")
+            }
+            if let prefixLength, !(1...48).contains(prefixLength) {
+                errors.append("\(side) MAC prefix length must be from 1 to 48.")
+            }
+        default:
+            break
+        }
+        if usesPorts, portNumbers == nil { errors.append("\(side) ports must be numbers from 1 to 65535.") }
+        return errors
+    }
+
+    func json(existing: JSONValue?) -> JSONValue? {
+        guard type != Self.any else { return nil }
+        var result: JSONValue = existing?["type"]?.string == type ? existing ?? [:] : [:]
+        result["type"] = .string(type)
+        let values = Address.list(addresses)
+        switch type {
+        case "IP_ADDRESSES_OR_SUBNETS":
+            result["ipAddressesOrSubnets"] = .array(values.map(JSONValue.string))
+        case "NETWORKS":
+            result["networkIds"] = .array(networkIds.map(\.apiString).sorted().map(JSONValue.string))
+        case "MAC_ADDRESSES":
+            result["macAddresses"] = .array(values.map { .string($0.lowercased()) })
+            result["prefixLength"] = prefixLength.map(JSONValue.int)
+        default:
+            break
+        }
+        if usesPorts {
+            let numbers = portNumbers ?? []
+            result["portFilter"] = numbers.isEmpty ? nil : .array(numbers.map(JSONValue.int))
+        }
+        return result
+    }
+}
+
+public struct ACLRuleDraft: Equatable, Sendable {
+    public static let types = ["IPV4", "MAC"]
+    public static let actions = ["ALLOW", "BLOCK"]
+    public static let protocols = ["TCP", "UDP"]
+
+    public var name = ""
+    public var enabled = true
+    public var action = "BLOCK"
+    public var type = "IPV4" {
+        didSet {
+            guard type != oldValue else { return }
+            let allowed = ACLEndpointDraft.types(forRule: type)
+            if !allowed.contains(source.type) { source = ACLEndpointDraft() }
+            if !allowed.contains(destination.type) { destination = ACLEndpointDraft() }
+        }
+    }
+    /// IPv4 rules only; empty matches every protocol.
+    public var protocols: Set<String> = []
+    /// MAC rules only: the network whose traffic the rule matches.
+    public var networkIdFilter: UUID?
+    public var source = ACLEndpointDraft()
+    public var destination = ACLEndpointDraft()
+    /// Rules limited to specific switches keep that limit; the editor doesn't change it.
+    public private(set) var hasDeviceFilter = false
+
+    public init() {}
+
+    public init(detail: JSONValue) {
+        name = detail["name"]?.string ?? ""
+        enabled = detail["enabled"]?.bool ?? enabled
+        action = detail["action"]?.string ?? action
+        type = detail["type"]?.string ?? type
+        protocols = Set(detail["protocolFilter"]?.strings ?? [])
+        networkIdFilter = detail["networkIdFilter"]?.uuid
+        source = ACLEndpointDraft(filter: detail["sourceFilter"])
+        destination = ACLEndpointDraft(filter: detail["destinationFilter"])
+        hasDeviceFilter = detail["enforcingDeviceFilter"] != nil
+    }
+
+    public static func label(forType type: String) -> String { type == "IPV4" ? "IPv4" : type }
+
+    public var validationErrors: [String] {
+        var errors: [String] = []
+        if name.trimmed.isEmpty { errors.append("Enter a rule name.") }
+        if type == "MAC", networkIdFilter == nil { errors.append("Choose the network this MAC rule applies to.") }
+        errors += source.errors("Source", ruleType: type)
+        errors += destination.errors("Destination", ruleType: type)
+        return errors
+    }
+
+    public func apply(to detail: JSONValue) -> JSONValue {
+        var result = detail
+        let sameType = detail["type"]?.string == type
+        result["name"] = .string(name.trimmed)
+        result["enabled"] = .bool(enabled)
+        result["action"] = .string(action)
+        result["type"] = .string(type)
+        if type == "IPV4" {
+            result["protocolFilter"] = protocols.isEmpty ? nil : .array(protocols.sorted().map(JSONValue.string))
+            result["networkIdFilter"] = nil
+        } else {
+            result["protocolFilter"] = nil
+            result["networkIdFilter"] = networkIdFilter.map { .string($0.apiString) }
+        }
+        result["sourceFilter"] = source.json(existing: sameType ? detail["sourceFilter"] : nil)
+        result["destinationFilter"] = destination.json(existing: sameType ? detail["destinationFilter"] : nil)
+        return result
+    }
+
+    public func createBody() -> JSONValue { apply(to: [:]) }
+}
+
+// MARK: - Traffic matching lists
+
+public struct TrafficMatchingListDraft: Equatable, Sendable {
+    public var name = ""
+    public var type = TrafficMatchingListType.ipv4.rawValue
+    /// Entries separated by commas or new lines. Ranges are written `start-stop`.
+    public var items = ""
+
+    public init() {}
+
+    public init(detail: JSONValue) {
+        name = detail["name"]?.string ?? ""
+        type = detail["type"]?.string ?? type
+        items = detail["items"]?.array?.compactMap(Self.text(for:)).joined(separator: "\n") ?? ""
+    }
+
+    private static func text(for item: JSONValue) -> String? {
+        func scalar(_ value: JSONValue?) -> String? { value?.string ?? value?.int.map(String.init) }
+        if let start = scalar(item["start"]), let stop = scalar(item["stop"]) { return "\(start)-\(stop)" }
+        return scalar(item["value"])
+    }
+
+    public var placeholder: String {
+        switch type {
+        case TrafficMatchingListType.ipv6.rawValue: return "2001:db8::1\n2001:db8:1::/64"
+        case TrafficMatchingListType.ports.rawValue: return "443\n8000-8080"
+        default: return "192.168.1.10\n10.0.0.0/8\n172.16.0.1-172.16.0.50"
+        }
+    }
+
+    private var entries: [String] { Address.list(items) }
+
+    /// The documented item for one entry, or `nil` when it isn't valid for this list type.
+    private func item(_ entry: String) -> JSONValue? {
+        switch type {
+        case TrafficMatchingListType.ipv4.rawValue:
+            if Address.isIPv4(entry) { return ["type": "IP_ADDRESS", "value": .string(entry)] }
+            if Address.isIPv4Subnet(entry) { return ["type": "SUBNET", "value": .string(entry)] }
+            if let range = Address.range(entry), let start = Address.ipv4(range.start), let stop = Address.ipv4(range.stop), start <= stop {
+                return ["type": "IP_ADDRESS_RANGE", "start": .string(range.start), "stop": .string(range.stop)]
+            }
+        case TrafficMatchingListType.ipv6.rawValue:
+            if Address.isIPv6(entry) { return ["type": "IP_ADDRESS", "value": .string(entry)] }
+            if Address.isIPv6Subnet(entry) { return ["type": "SUBNET", "value": .string(entry)] }
+        case TrafficMatchingListType.ports.rawValue:
+            let ports = 1...65535
+            if let port = Int(entry), ports.contains(port) { return ["type": "PORT_NUMBER", "value": .int(port)] }
+            if let range = Address.range(entry), let start = Int(range.start), let stop = Int(range.stop),
+               ports.contains(start), ports.contains(stop), start <= stop {
+                return ["type": "PORT_NUMBER_RANGE", "start": .int(start), "stop": .int(stop)]
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    public var validationErrors: [String] {
+        var errors: [String] = []
+        if name.trimmed.isEmpty { errors.append("Enter a list name.") }
+        if TrafficMatchingListType(rawValue: type) == nil { errors.append("Choose a list type.") }
+        let entries = entries
+        if entries.isEmpty {
+            errors.append("Add at least one entry.")
+        } else {
+            let invalid = entries.filter { item($0) == nil }
+            if !invalid.isEmpty {
+                errors.append("Not valid for \(TrafficMatchingListType.label(for: type)): \(invalid.prefix(3).joined(separator: ", "))")
+            }
+        }
+        return errors
+    }
+
+    public func apply(to detail: JSONValue) -> JSONValue {
+        var result = detail
+        result["name"] = .string(name.trimmed)
+        result["type"] = .string(type)
+        result["items"] = .array(entries.compactMap(item))
+        return result
+    }
+
+    public func createBody() -> JSONValue { apply(to: [:]) }
 }

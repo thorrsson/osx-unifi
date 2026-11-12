@@ -406,6 +406,54 @@ final class NetworkAPITests: XCTestCase {
         XCTAssertEqual(try JSONValue.parse(XCTUnwrap(requests[1].httpBody)), reordered.json)
     }
 
+    func testACLRuleOrderingRoundTripIsVerified() async throws {
+        let first = UUID(), second = UUID()
+        let original = #"{"orderedAclRuleIds":["\#(first.apiString)","\#(second.apiString)"]}"#
+        let reordered = try XCTUnwrap(ACLRuleOrdering([first, second]).applying(.later, to: first))
+        XCTAssertEqual(reordered.ids, [second, first])
+        XCTAssertNil(reordered.applying(.later, to: first))
+        XCTAssertNil(reordered.applying(.earlier, to: UUID()))
+        let transport = StubTransport([
+            .init(status: 200, body: original),
+            .init(status: 200, body: String(decoding: try reordered.json.data(), as: UTF8.self)),
+            .init(status: 200, body: original)
+        ])
+        let api = try api(transport)
+        let ordering = try await api.aclRuleOrdering(siteID: uuid)
+        XCTAssertEqual(ordering.ids, [first, second])
+        try await api.reorderACLRules(siteID: uuid, ordering: reordered)
+        do {
+            try await api.reorderACLRules(siteID: uuid, ordering: reordered)
+            XCTFail("An order the controller did not apply must fail")
+        } catch NetworkAPIError.incompatibleResponse {}
+
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "PUT", "PUT"])
+        XCTAssertEqual(Set(requests.compactMap { $0.url?.path }), ["\(base)/acl-rules/ordering"])
+        XCTAssertEqual(try JSONValue.parse(XCTUnwrap(requests[1].httpBody)), reordered.json)
+    }
+
+    func testACLRulesAndTrafficListsDecode() async throws {
+        let rule = """
+            {"id":"\(id)","type":"MAC","name":"Cams","enabled":true,"action":"BLOCK","index":2,
+             "metadata":{"origin":"USER_DEFINED"},"networkIdFilter":"\(id)",
+             "sourceFilter":{"type":"MAC_ADDRESSES","macAddresses":["aa:bb:cc:dd:ee:ff"],"prefixLength":24}}
+            """
+        let list = """
+            {"id":"\(id)","type":"PORTS","name":"Web","items":[{"type":"PORT_NUMBER","value":443},
+             {"type":"PORT_NUMBER_RANGE","start":8000,"stop":8080}]}
+            """
+        let transport = StubTransport([.init(status: 200, body: page("[\(rule)]")), .init(status: 200, body: page("[\(list)]"))])
+        let api = try api(transport)
+        let rules = try await api.aclRules(siteID: uuid)
+        XCTAssertEqual(rules.first?.sourceFilter?.prefixLength, 24)
+        XCTAssertEqual(rules.first?.networkIdFilter, uuid)
+        let lists = try await api.trafficMatchingLists(siteID: uuid)
+        XCTAssertEqual(lists.first?.items.map(\.text), ["443", "8000-8080"])
+        let paths = await transport.capturedRequests().compactMap { $0.url?.path }
+        XCTAssertEqual(paths, ["\(base)/acl-rules", "\(base)/traffic-matching-lists"])
+    }
+
     func testVoucherGenerationAndExpiredCleanup() async throws {
         let voucher = #"{"id":"\#(id)","code":"1234567890","name":"Guest","createdAt":"2026-01-01T00:00:00Z","expired":false,"timeLimitMinutes":60,"authorizedGuestCount":0,"authorizedGuestLimit":1}"#
         let transport = StubTransport([

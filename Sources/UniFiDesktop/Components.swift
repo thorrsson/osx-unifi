@@ -231,6 +231,16 @@ extension DNSPolicyDraft: ResourceDraft {
     func body(forCreateOn version: NetworkVersion?) -> JSONValue { createBody() }
 }
 
+extension ACLRuleDraft: ResourceDraft {
+    var title: String { name }
+    func body(forCreateOn version: NetworkVersion?) -> JSONValue { createBody() }
+}
+
+extension TrafficMatchingListDraft: ResourceDraft {
+    var title: String { name }
+    func body(forCreateOn version: NetworkVersion?) -> JSONValue { createBody() }
+}
+
 enum EditorTarget: Hashable, Identifiable {
     case create
     case edit(UUID)

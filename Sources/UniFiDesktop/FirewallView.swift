@@ -3,7 +3,7 @@ import UniFiCore
 
 struct FirewallPage: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case policies = "Policies", zones = "Zones"
+        case policies = "Policies", zones = "Zones", aclRules = "ACL Rules", lists = "Lists"
         var id: Self { self }
     }
 
@@ -15,12 +15,14 @@ struct FirewallPage: View {
             switch tab {
             case .policies: PoliciesView(tab: $tab)
             case .zones: ZonesView(tab: $tab)
+            case .aclRules: ACLRulesView(tab: $tab)
+            case .lists: TrafficListsView(tab: $tab)
             }
         }
     }
 }
 
-private struct TabPicker: View {
+struct TabPicker: View {
     @Binding var tab: FirewallPage.Tab
 
     var body: some View {
@@ -29,7 +31,7 @@ private struct TabPicker: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(width: 180)
+        .frame(width: 340)
     }
 }
 

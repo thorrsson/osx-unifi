@@ -110,7 +110,11 @@ On UniFi Network 11, policies can also **report flows**. Choose **Report Flows**
 
 Switch to the **Zones** view to create, rename and delete firewall zones and choose which networks belong to each one.
 
-Detailed traffic matching, such as ports, IP groups, apps or schedules, is kept as-is. Use **Open Firewall Settings in Web UI** to change it.
+Detailed policy traffic matching, such as ports, IP groups, apps or schedules, is kept as-is. Use **Open Firewall Settings in Web UI** to change it.
+
+The **ACL Rules** view lists switch ACL rules in evaluation order. Create and edit a rule's name, action (allow or block), and whether it matches IPv4 traffic or MAC addresses. IPv4 rules can match TCP, UDP or both, and filter the source and destination by addresses or subnets, networks, or ports. MAC rules apply to one network and match MAC addresses with an optional prefix length. Use **Move Up** and **Move Down** in the context menu to change the order. A rule limited to specific switches keeps that limit when you edit it.
+
+The **Lists** view manages traffic matching lists: named lists of IPv4 addresses, IPv6 addresses or ports that firewall policies can refer to. Enter one address, subnet or port per line. IPv4 and port lists also take `start-stop` ranges. The console won't delete a list that a policy still uses.
 
 ## DNS
 
@@ -140,7 +144,7 @@ UniFi Desktop only uses the official, documented UniFi Network API. It doesn't a
 
 - Port forwarding, VPN, routing, and traffic or content filtering.
 - Device settings such as LEDs, port profiles and radio channels.
-- Detailed firewall traffic matching and schedules.
+- Detailed firewall policy traffic matching and schedules.
 - Console settings, users and admins, UniFi Protect and other UniFi apps.
 
 Click **Open in Web UI** in the toolbar to open the matching page of your console's web UI in your browser. You may need to sign in to the console there.
