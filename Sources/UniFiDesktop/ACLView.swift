@@ -90,10 +90,10 @@ struct ACLRulesView: View {
         .contextMenu(forSelectionType: ACLRule.ID.self) { ids in
             if let id = ids.first, let rule = model.aclRules.value?.first(where: { $0.id == id }) {
                 Button(rule.metadata.isUserDefined ? "Edit..." : "View...") { editor = .edit(id) }
-                Divider()
-                Button("Move Up") { Task { await model.move(rule, .earlier) } }.disabled(!model.canMutate)
-                Button("Move Down") { Task { await model.move(rule, .later) } }.disabled(!model.canMutate)
                 if rule.metadata.isUserDefined {
+                    Divider()
+                    Button("Move Up") { Task { await model.move(rule, .earlier) } }.disabled(!model.canMutate)
+                    Button("Move Down") { Task { await model.move(rule, .later) } }.disabled(!model.canMutate)
                     Divider()
                     Button("Delete...", role: .destructive) { ACLRuleEditor.confirmDelete(rule, model: model, confirm: confirm) }
                 }

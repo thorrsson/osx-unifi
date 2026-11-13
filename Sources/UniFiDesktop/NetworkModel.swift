@@ -568,8 +568,12 @@ final class NetworkModel: ObservableObject {
     @discardableResult
     func move(_ rule: ACLRule, _ move: ACLRuleOrdering.Move) async -> Bool {
         guard canMutate, let api, let site = selectedSite else { return false }
+        // ACL ordering is one site-wide list: hold the lock from the read through the write so no
+        // other change or site switch can land in between. `perform` retakes it without suspending.
+        isBusy = true
         let current: ACLRuleOrdering
         do {
+            defer { isBusy = false }
             current = try await api.aclRuleOrdering(siteID: site.id)
         } catch {
             self.error = "Nothing was changed. Could not load the current ACL rule order. \(Self.describe(error))"

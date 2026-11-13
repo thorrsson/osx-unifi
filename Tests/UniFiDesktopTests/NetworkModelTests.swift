@@ -158,8 +158,12 @@ private actor ModelAPI: NetworkAPI {
         try mutate("reorder")
         appliedOrdering = ordering
     }
+    private var onACLOrdering: (@Sendable () async -> Void)?
+    func setOnACLOrdering(_ hook: (@Sendable () async -> Void)?) { onACLOrdering = hook }
     func aclRuleOrdering(siteID: UUID) async throws -> ACLRuleOrdering {
         calls.append("ordering")
+        await onACLOrdering?()
+        if let detailFailure { throw detailFailure }
         return aclOrdering
     }
     func reorderACLRules(siteID: UUID, ordering: ACLRuleOrdering) async throws {
@@ -543,6 +547,21 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testACLRuleMoveHoldsTheLockWhileReadingTheOrder() async throws {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.connect()
+        let rule = try XCTUnwrap(model.aclRules.value?.first { $0.id == policyA })
+        let busy = BusyProbe()
+        await api.setOnACLOrdering { await busy.record(await MainActor.run { model.isBusy }) }
+        accepted(await model.move(rule, .later))
+        await api.configure(detailFailure: .authentication)
+        refused(await model.move(rule, .later))
+        let observed = await busy.values
+        XCTAssertEqual(observed, [true, true])
+        XCTAssertFalse(model.isBusy)
+    }
+
     func testImpossibleMovesAreNotSent() async throws {
         let api = ModelAPI()
         let model = model(api)
@@ -758,4 +777,9 @@ final class NetworkModelTests: XCTestCase {
         }
         XCTAssertFalse(UpdaterModel.validConfiguration(feed: "https://example.com", publicKey: "bad"))
     }
+}
+
+private actor BusyProbe {
+    private(set) var values: [Bool] = []
+    func record(_ value: Bool) { values.append(value) }
 }
