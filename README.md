@@ -26,7 +26,9 @@ Retry action instead of an empty list, while the rest of the site stays usable.
   Enterprise and other unrecognized security modes are preserved untouched.
 - **Firewall**: zone-based policies with create, edit, enable/disable, logging, delete,
   and ordering (move up/down, evaluate before or after built-in policies); firewall
-  zones with create, rename, network membership and delete.
+  zones with create, rename, network membership and delete; switch ACL rules (IPv4 and
+  MAC) with create, edit, enable/disable, delete and ordering; traffic matching lists
+  (IPv4, IPv6 and port lists) with create, edit and delete.
 - **DNS**: local DNS records (A, AAAA, CNAME, TXT, MX, SRV) and forward domains.
 - **Hotspot**: create vouchers in bulk with duration, guest and usage limits, copy
   codes, delete selected vouchers, or delete all expired vouchers.
@@ -203,10 +205,12 @@ POST                /sites/{siteId}/devices/{deviceId}/actions              REST
 POST                /sites/{siteId}/devices/{deviceId}/interfaces/ports/{n}/actions  POWER_CYCLE
 POST                /sites/{siteId}/clients/{clientId}/actions              guest authorize/revoke
 GET POST            /sites/{siteId}/networks | wifi/broadcasts | firewall/zones | firewall/policies | dns/policies
+                    | acl-rules | traffic-matching-lists
 GET PUT DELETE      /sites/{siteId}/{resource}/{id}
 GET                 /sites/{siteId}/networks/{id}/references
 PATCH               /sites/{siteId}/firewall/policies/{id}                  logging, flow reporting
 GET PUT             /sites/{siteId}/firewall/policies/ordering?sourceFirewallZoneId=&destinationFirewallZoneId=
+GET PUT             /sites/{siteId}/acl-rules/ordering
 GET POST DELETE     /sites/{siteId}/hotspot/vouchers                        DELETE uses filter=expired.eq(true)
 DELETE              /sites/{siteId}/hotspot/vouchers/{id}
 ```

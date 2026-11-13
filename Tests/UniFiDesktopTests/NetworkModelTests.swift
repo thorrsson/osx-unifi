@@ -54,6 +54,8 @@ private actor ModelAPI: NetworkAPI {
     private(set) var calls: [String] = []
     private(set) var replacedBody: JSONValue?
     private(set) var appliedOrdering: FirewallPolicyOrdering?
+    var aclOrdering = ACLRuleOrdering([policyA, policyB])
+    private(set) var appliedACLOrdering: ACLRuleOrdering?
     private(set) var statisticsReads = 0
     private var failStatistics = false
     let id = siteID
@@ -112,6 +114,12 @@ private actor ModelAPI: NetworkAPI {
         }.joined(separator: ",") + "]")
     }
     func dnsPolicies(siteID: UUID) async throws -> [DNSPolicy] { [] }
+    func aclRules(siteID: UUID) async throws -> [ACLRule] {
+        try decode("[" + [policyA, policyB].enumerated().map { index, rule in
+            #"{"id":"\#(rule.apiString)","type":"IPV4","name":"Rule \#(index + 1)","enabled":true,"action":"BLOCK","index":\#(index),"metadata":{"origin":"USER_DEFINED"}}"#
+        }.joined(separator: ",") + "]")
+    }
+    func trafficMatchingLists(siteID: UUID) async throws -> [TrafficMatchingList] { [] }
     func vouchers(siteID: UUID) async throws -> [HotspotVoucher] { [] }
     func wans(siteID: UUID) async throws -> [WAN] { [] }
     func pendingDevices() async throws -> [PendingDevice] { [] }
@@ -149,6 +157,18 @@ private actor ModelAPI: NetworkAPI {
     func reorderFirewallPolicies(siteID: UUID, sourceZoneID: UUID, destinationZoneID: UUID, ordering: FirewallPolicyOrdering) async throws {
         try mutate("reorder")
         appliedOrdering = ordering
+    }
+    private var onACLOrdering: (@Sendable () async -> Void)?
+    func setOnACLOrdering(_ hook: (@Sendable () async -> Void)?) { onACLOrdering = hook }
+    func aclRuleOrdering(siteID: UUID) async throws -> ACLRuleOrdering {
+        calls.append("ordering")
+        await onACLOrdering?()
+        if let detailFailure { throw detailFailure }
+        return aclOrdering
+    }
+    func reorderACLRules(siteID: UUID, ordering: ACLRuleOrdering) async throws {
+        try mutate("reorderACL")
+        appliedACLOrdering = ordering
     }
     func generateVouchers(siteID: UUID, request: VoucherRequest) async throws -> [HotspotVoucher] {
         try mutate("generate")
@@ -514,6 +534,34 @@ final class NetworkModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Moved Policy 2.")
     }
 
+    func testACLRuleMoveSendsReorderedCopy() async throws {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.connect()
+        let rules = try XCTUnwrap(model.aclRules.value)
+        refused(await model.move(try XCTUnwrap(rules.first { $0.id == policyA }), .earlier))
+        accepted(await model.move(try XCTUnwrap(rules.first { $0.id == policyA }), .later))
+        let applied = await api.appliedACLOrdering
+        XCTAssertEqual(applied, ACLRuleOrdering([policyB, policyA]))
+        let count = await api.actionCount()
+        XCTAssertEqual(count, 1)
+    }
+
+    func testACLRuleMoveHoldsTheLockWhileReadingTheOrder() async throws {
+        let api = ModelAPI()
+        let model = model(api)
+        await model.connect()
+        let rule = try XCTUnwrap(model.aclRules.value?.first { $0.id == policyA })
+        let busy = BusyProbe()
+        await api.setOnACLOrdering { await busy.record(await MainActor.run { model.isBusy }) }
+        accepted(await model.move(rule, .later))
+        await api.configure(detailFailure: .authentication)
+        refused(await model.move(rule, .later))
+        let observed = await busy.values
+        XCTAssertEqual(observed, [true, true])
+        XCTAssertFalse(model.isBusy)
+    }
+
     func testImpossibleMovesAreNotSent() async throws {
         let api = ModelAPI()
         let model = model(api)
@@ -729,4 +777,9 @@ final class NetworkModelTests: XCTestCase {
         }
         XCTAssertFalse(UpdaterModel.validConfiguration(feed: "https://example.com", publicKey: "bad"))
     }
+}
+
+private actor BusyProbe {
+    private(set) var values: [Bool] = []
+    func record(_ value: Bool) { values.append(value) }
 }

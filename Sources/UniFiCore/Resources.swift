@@ -425,6 +425,8 @@ public enum EditableResource: String, CaseIterable, Sendable {
     case firewallZones
     case firewallPolicies
     case dnsPolicies
+    case aclRules
+    case trafficMatchingLists
 
     var path: String {
         switch self {
@@ -433,15 +435,19 @@ public enum EditableResource: String, CaseIterable, Sendable {
         case .firewallZones: return "firewall/zones"
         case .firewallPolicies: return "firewall/policies"
         case .dnsPolicies: return "dns/policies"
+        case .aclRules: return "acl-rules"
+        case .trafficMatchingLists: return "traffic-matching-lists"
         }
     }
 
     /// Server-owned fields returned by detail endpoints but absent from the documented update schemas.
+    /// ACL rule `index` is deprecated in updates; order is changed through the ordering endpoint instead.
     public var readOnlyKeys: Set<String> {
         switch self {
         case .networks: return ["id", "metadata", "default"]
-        case .firewallPolicies: return ["id", "metadata", "index"]
+        case .firewallPolicies, .aclRules: return ["id", "metadata", "index"]
         case .wifiBroadcasts, .firewallZones, .dnsPolicies: return ["id", "metadata"]
+        case .trafficMatchingLists: return ["id"]
         }
     }
 
@@ -454,6 +460,8 @@ public enum EditableResource: String, CaseIterable, Sendable {
         case .firewallZones: return "firewall zone"
         case .firewallPolicies: return "firewall policy"
         case .dnsPolicies: return "DNS policy"
+        case .aclRules: return "ACL rule"
+        case .trafficMatchingLists: return "traffic matching list"
         }
     }
 
@@ -561,6 +569,120 @@ public struct FirewallPolicyOrdering: Sendable, Equatable {
         } else {
             return nil
         }
+        return result
+    }
+}
+
+// MARK: - ACL rules and traffic matching lists
+
+/// A switch-enforced access control rule. `IPV4` rules match addresses, networks, and ports;
+/// `MAC` rules match MAC addresses within one network.
+public struct ACLRule: Decodable, Identifiable, Sendable, Hashable {
+    public struct EndpointFilter: Decodable, Sendable, Hashable {
+        public let type: String
+        public let ipAddressesOrSubnets: [String]?
+        public let networkIds: [UUID]?
+        public let portFilter: [Int]?
+        public let macAddresses: [String]?
+        public let prefixLength: Int?
+    }
+
+    public let id: UUID
+    public let type: String
+    public let name: String
+    public let enabled: Bool
+    public let action: String
+    public let index: Int
+    public let metadata: EntityMetadata
+    public let protocolFilter: [String]?
+    public let networkIdFilter: UUID?
+    public let sourceFilter: EndpointFilter?
+    public let destinationFilter: EndpointFilter?
+
+    public var typeLabel: String { type == "IPV4" ? "IPv4" : type == "MAC" ? "MAC" : type }
+}
+
+public struct TrafficMatchingList: Decodable, Identifiable, Sendable, Hashable {
+    /// One address, subnet, port, or range. Ports are numbers and addresses are strings in the API.
+    public struct Item: Decodable, Sendable, Hashable {
+        public let type: String
+        public let value: String?
+        public let start: String?
+        public let stop: String?
+
+        private enum CodingKeys: String, CodingKey { case type, value, start, stop }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            func text(_ key: CodingKeys) throws -> String? {
+                if let number = try? container.decodeIfPresent(Int.self, forKey: key) { return String(number) }
+                return try container.decodeIfPresent(String.self, forKey: key)
+            }
+            type = try container.decode(String.self, forKey: .type)
+            value = try text(.value)
+            start = try text(.start)
+            stop = try text(.stop)
+        }
+
+        public var text: String {
+            if let start, let stop { return "\(start)-\(stop)" }
+            return value ?? ""
+        }
+    }
+
+    public let id: UUID
+    public let name: String
+    public let type: String
+    public let items: [Item]
+
+    public var typeLabel: String { TrafficMatchingListType.label(for: type) }
+}
+
+public enum TrafficMatchingListType: String, CaseIterable, Identifiable, Sendable {
+    case ipv4 = "IPV4_ADDRESSES"
+    case ipv6 = "IPV6_ADDRESSES"
+    case ports = "PORTS"
+
+    public var id: String { rawValue }
+    public var label: String { Self.label(for: rawValue) }
+
+    public static func label(for type: String) -> String {
+        switch type {
+        case "IPV4_ADDRESSES": return "IPv4 Addresses"
+        case "IPV6_ADDRESSES": return "IPv6 Addresses"
+        case "PORTS": return "Ports"
+        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+}
+
+/// The site's ACL rule evaluation order, a single list of every rule.
+public struct ACLRuleOrdering: Sendable, Equatable {
+    public enum Move: Sendable {
+        case earlier, later
+    }
+
+    public var ids: [UUID]
+
+    public init(_ ids: [UUID]) { self.ids = ids }
+
+    init(json: JSONValue) throws {
+        guard let values = json["orderedAclRuleIds"]?.array else { throw NetworkAPIError.incompatibleResponse }
+        ids = try values.map { value in
+            guard let id = value.string.flatMap(UUID.init(uuidString:)) else { throw NetworkAPIError.incompatibleResponse }
+            return id
+        }
+    }
+
+    var json: JSONValue { ["orderedAclRuleIds": .array(ids.map { .string($0.apiString) })] }
+
+    /// Returns the reordered list, or `nil` when the rule is absent or already at that end.
+    public func applying(_ move: Move, to id: UUID) -> ACLRuleOrdering? {
+        guard let index = ids.firstIndex(of: id) else { return nil }
+        let target = move == .earlier ? index - 1 : index + 1
+        guard ids.indices.contains(target) else { return nil }
+        var result = self
+        result.ids.swapAt(index, target)
         return result
     }
 }

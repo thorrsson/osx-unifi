@@ -116,6 +116,76 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(edited["broadcastingFrequenciesGHz"], [.double(2.4), 5])
     }
 
+    func testACLRuleDraftBuildsIPv4AndMACRules() throws {
+        var draft = ACLRuleDraft()
+        draft.name = "Block cams"
+        draft.protocols = ["TCP"]
+        draft.source.type = "IP_ADDRESSES_OR_SUBNETS"
+        draft.source.addresses = "10.0.0.0/24, 10.0.1.5"
+        draft.destination.type = "PORTS"
+        draft.destination.ports = "443, 80, 443"
+        XCTAssertEqual(draft.validationErrors, [])
+        XCTAssertEqual(draft.createBody(), try json("""
+            {"name":"Block cams","enabled":true,"action":"BLOCK","type":"IPV4","protocolFilter":["TCP"],
+             "sourceFilter":{"type":"IP_ADDRESSES_OR_SUBNETS","ipAddressesOrSubnets":["10.0.0.0/24","10.0.1.5"]},
+             "destinationFilter":{"type":"PORTS","portFilter":[80,443]}}
+            """))
+
+        draft.destination.ports = "70000"
+        draft.source.addresses = "aa:bb:cc:dd:ee:ff"
+        XCTAssertEqual(draft.validationErrors.count, 2)
+
+        draft.type = "MAC"
+        XCTAssertEqual(draft.source.type, ACLEndpointDraft.any)
+        XCTAssertTrue(draft.validationErrors.contains { $0.contains("network") })
+        draft.networkIdFilter = zoneA
+        draft.source.type = "MAC_ADDRESSES"
+        draft.source.addresses = "AA:BB:CC:DD:EE:FF"
+        draft.source.prefixLength = 24
+        XCTAssertEqual(draft.validationErrors, [])
+        let mac = draft.createBody()
+        XCTAssertNil(mac["protocolFilter"])
+        XCTAssertNil(mac["destinationFilter"])
+        XCTAssertEqual(mac["networkIdFilter"], .string(zoneA.apiString))
+        XCTAssertEqual(mac["sourceFilter"], ["type": "MAC_ADDRESSES", "macAddresses": ["aa:bb:cc:dd:ee:ff"], "prefixLength": 24])
+    }
+
+    func testACLRuleDraftPreservesUnshownFields() throws {
+        let detail = try json("""
+            {"name":"Lab","enabled":true,"action":"ALLOW","type":"IPV4","enforcingDeviceFilter":{"deviceIds":["x"]},
+             "sourceFilter":{"type":"NETWORKS","networkIds":["\(zoneA.apiString)"],"future":1}}
+            """)
+        var draft = ACLRuleDraft(detail: detail)
+        XCTAssertTrue(draft.hasDeviceFilter)
+        XCTAssertEqual(draft.apply(to: detail), detail)
+        draft.enabled = false
+        let edited = draft.apply(to: detail)
+        XCTAssertEqual(edited["enforcingDeviceFilter"], detail["enforcingDeviceFilter"])
+        XCTAssertEqual(edited["sourceFilter"]?["future"], 1)
+        XCTAssertEqual(edited["enabled"], false)
+    }
+
+    func testTrafficMatchingListDraftParsesEntries() throws {
+        var draft = TrafficMatchingListDraft()
+        draft.name = "Servers"
+        draft.items = "10.0.0.1\n10.0.0.0/24, 10.0.0.5-10.0.0.9"
+        XCTAssertEqual(draft.validationErrors, [])
+        XCTAssertEqual(draft.createBody()["items"], try json("""
+            [{"type":"IP_ADDRESS","value":"10.0.0.1"},{"type":"SUBNET","value":"10.0.0.0/24"},
+             {"type":"IP_ADDRESS_RANGE","start":"10.0.0.5","stop":"10.0.0.9"}]
+            """))
+        draft.items = "10.0.0.9-10.0.0.5, nope"
+        XCTAssertEqual(draft.validationErrors, ["Not valid for IPv4 Addresses: 10.0.0.9-10.0.0.5, nope"])
+
+        draft.type = TrafficMatchingListType.ports.rawValue
+        draft.items = "443\n8000-8080"
+        XCTAssertEqual(draft.createBody()["items"], try json("""
+            [{"type":"PORT_NUMBER","value":443},{"type":"PORT_NUMBER_RANGE","start":8000,"stop":8080}]
+            """))
+        let round = TrafficMatchingListDraft(detail: draft.createBody())
+        XCTAssertEqual(round.items, "443\n8000-8080")
+    }
+
     func testFirewallPolicyDraftPreservesFiltersAndGatesFlowReporting() throws {
         let detail = try json("""
             {"name":"Block cams","enabled":true,"action":{"type":"ALLOW","allowReturnTraffic":true},

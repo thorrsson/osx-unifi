@@ -13,7 +13,11 @@ trap 'rm -rf "$scratch"' EXIT
 printf '%s' "$SPARKLE_PRIVATE_KEY" > "$scratch/key"
 mkdir "$scratch/feed"
 cp "$dmg" "$scratch/feed/"
-if git cat-file -e origin/main:appcast.xml 2>/dev/null; then
+# The smoke check signs a throwaway 0.1.0 build, which the published feed's newer
+# releases would push out of the generated appcast, so it starts from an empty feed.
+if [[ "${UNIFI_PACKAGING_SMOKE:-0}" == 1 ]]; then
+    :
+elif git cat-file -e origin/main:appcast.xml 2>/dev/null; then
     git show origin/main:appcast.xml > "$scratch/feed/appcast.xml"
 elif [[ -f appcast.xml ]]; then
     cp appcast.xml "$scratch/feed/appcast.xml"

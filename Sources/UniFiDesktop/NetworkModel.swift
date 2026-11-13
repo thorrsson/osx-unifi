@@ -42,7 +42,7 @@ enum LoadState<Value> {
 }
 
 enum InventorySection: CaseIterable, Hashable {
-    case devices, clients, networks, wifi, zones, policies, dns, vouchers, wans, pending
+    case devices, clients, networks, wifi, zones, policies, dns, vouchers, wans, pending, aclRules, trafficLists
 }
 
 @MainActor
@@ -60,6 +60,8 @@ final class NetworkModel: ObservableObject {
     @Published private(set) var firewallZones: LoadState<[FirewallZone]> = .idle
     @Published private(set) var firewallPolicies: LoadState<[FirewallPolicy]> = .idle
     @Published private(set) var dnsPolicies: LoadState<[DNSPolicy]> = .idle
+    @Published private(set) var aclRules: LoadState<[ACLRule]> = .idle
+    @Published private(set) var trafficMatchingLists: LoadState<[TrafficMatchingList]> = .idle
     @Published private(set) var vouchers: LoadState<[HotspotVoucher]> = .idle
     @Published private(set) var wans: LoadState<[WAN]> = .idle
     @Published private(set) var pendingDevices: LoadState<[PendingDevice]> = .idle
@@ -326,7 +328,10 @@ final class NetworkModel: ObservableObject {
         async let pending = load(.pending) {
             try await api.pendingDevices().filter { $0.adoptionTargetSiteIds?.contains(siteID) ?? true }
         }
+        async let acl = load(.aclRules) { try await api.aclRules(siteID: siteID) }
+        async let lists = load(.trafficLists) { try await api.trafficMatchingLists(siteID: siteID) }
         let results = await (devices, clients, networks, wifi, zones, policies, dns, vouchers, wans, pending)
+        let extra = await (acl, lists)
 
         // A newer load (for example, a site switch) supersedes this one; its results are discarded.
         guard generation == loadGeneration, selectedSite?.id == siteID else { return }
@@ -340,6 +345,8 @@ final class NetworkModel: ObservableObject {
         if let value = results.7 { self.vouchers = value }
         if let value = results.8 { self.wans = value }
         if let value = results.9 { self.pendingDevices = value }
+        if let value = extra.0 { self.aclRules = value }
+        if let value = extra.1 { self.trafficMatchingLists = value }
         lastRefreshed = Date()
         isLoading = false
 
@@ -392,6 +399,8 @@ final class NetworkModel: ObservableObject {
         case .vouchers: vouchers = .loading
         case .wans: wans = .loading
         case .pending: pendingDevices = .loading
+        case .aclRules: aclRules = .loading
+        case .trafficLists: trafficMatchingLists = .loading
         }
     }
 
@@ -413,6 +422,8 @@ final class NetworkModel: ObservableObject {
         vouchers = map([HotspotVoucher].self)
         wans = map([WAN].self)
         pendingDevices = map([PendingDevice].self)
+        aclRules = map([ACLRule].self)
+        trafficMatchingLists = map([TrafficMatchingList].self)
         gatewayStatistics = map(DeviceStatistics.self)
     }
 
@@ -550,6 +561,32 @@ final class NetworkModel: ObservableObject {
         }
         return await perform("Moved \(policy.name).", reload: [.policies]) {
             try await api.reorderFirewallPolicies(siteID: site.id, sourceZoneID: source, destinationZoneID: destination, ordering: reordered)
+        }
+    }
+
+    /// Reads the site's current ACL rule order, then sends one reordered copy.
+    @discardableResult
+    func move(_ rule: ACLRule, _ move: ACLRuleOrdering.Move) async -> Bool {
+        guard canMutate, let api, let site = selectedSite else { return false }
+        // ACL ordering is one site-wide list: hold the lock from the read through the write so no
+        // other change or site switch can land in between. `perform` retakes it without suspending.
+        isBusy = true
+        let current: ACLRuleOrdering
+        do {
+            defer { isBusy = false }
+            current = try await api.aclRuleOrdering(siteID: site.id)
+        } catch {
+            self.error = "Nothing was changed. Could not load the current ACL rule order. \(Self.describe(error))"
+            return false
+        }
+        guard let reordered = current.applying(move, to: rule.id) else {
+            error = current.ids.contains(rule.id)
+                ? "\(rule.name) is already in that position. Nothing was changed."
+                : "\(rule.name) isn't in the console's ACL rule order. Nothing was changed."
+            return false
+        }
+        return await perform("Moved \(rule.name).", reload: [.aclRules]) {
+            try await api.reorderACLRules(siteID: site.id, ordering: reordered)
         }
     }
 
@@ -705,11 +742,13 @@ struct MessageError: Error, Equatable {
 extension EditableResource {
     var sections: Set<InventorySection> {
         switch self {
-        case .networks: return [.networks, .zones, .wifi]
+        case .networks: return [.networks, .zones, .wifi, .aclRules]
         case .wifiBroadcasts: return [.wifi]
         case .firewallZones: return [.zones, .policies]
         case .firewallPolicies: return [.policies]
         case .dnsPolicies: return [.dns]
+        case .aclRules: return [.aclRules]
+        case .trafficMatchingLists: return [.trafficLists]
         }
     }
 }

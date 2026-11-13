@@ -241,6 +241,8 @@ public protocol NetworkAPI: Sendable {
     func firewallZones(siteID: UUID) async throws -> [FirewallZone]
     func firewallPolicies(siteID: UUID) async throws -> [FirewallPolicy]
     func dnsPolicies(siteID: UUID) async throws -> [DNSPolicy]
+    func aclRules(siteID: UUID) async throws -> [ACLRule]
+    func trafficMatchingLists(siteID: UUID) async throws -> [TrafficMatchingList]
     func vouchers(siteID: UUID) async throws -> [HotspotVoucher]
     func wans(siteID: UUID) async throws -> [WAN]
     func pendingDevices() async throws -> [PendingDevice]
@@ -255,7 +257,8 @@ public protocol NetworkAPI: Sendable {
     func patchFirewallPolicy(siteID: UUID, policyID: UUID, patch: FirewallPolicyPatch) async throws
     func firewallPolicyOrdering(siteID: UUID, sourceZoneID: UUID, destinationZoneID: UUID) async throws -> FirewallPolicyOrdering
     func reorderFirewallPolicies(siteID: UUID, sourceZoneID: UUID, destinationZoneID: UUID, ordering: FirewallPolicyOrdering) async throws
-
+    func aclRuleOrdering(siteID: UUID) async throws -> ACLRuleOrdering
+    func reorderACLRules(siteID: UUID, ordering: ACLRuleOrdering) async throws
     func generateVouchers(siteID: UUID, request: VoucherRequest) async throws -> [HotspotVoucher]
     func deleteVoucher(siteID: UUID, voucherID: UUID) async throws
     func deleteExpiredVouchers(siteID: UUID) async throws -> Int
@@ -311,6 +314,10 @@ public struct IntegrationV1API: NetworkAPI {
         try await list("\(site(siteID))/firewall/policies")
     }
     public func dnsPolicies(siteID: UUID) async throws -> [DNSPolicy] { try await list("\(site(siteID))/dns/policies") }
+    public func aclRules(siteID: UUID) async throws -> [ACLRule] { try await list("\(site(siteID))/acl-rules") }
+    public func trafficMatchingLists(siteID: UUID) async throws -> [TrafficMatchingList] {
+        try await list("\(site(siteID))/traffic-matching-lists")
+    }
     public func vouchers(siteID: UUID) async throws -> [HotspotVoucher] {
         try await list("\(site(siteID))/hotspot/vouchers", pageSize: 1000)
     }
@@ -387,6 +394,17 @@ public struct IntegrationV1API: NetworkAPI {
         let applied = try FirewallPolicyOrdering(json: JSONValue.parse(await request(
             "PUT", "\(site(siteID))/firewall/policies/ordering",
             query: orderingQuery(sourceZoneID, destinationZoneID), body: ordering.json.data(), resourceScoped: true
+        )))
+        guard applied == ordering else { throw NetworkAPIError.incompatibleResponse }
+    }
+
+    public func aclRuleOrdering(siteID: UUID) async throws -> ACLRuleOrdering {
+        try ACLRuleOrdering(json: JSONValue.parse(await request("GET", "\(site(siteID))/acl-rules/ordering", resourceScoped: true)))
+    }
+
+    public func reorderACLRules(siteID: UUID, ordering: ACLRuleOrdering) async throws {
+        let applied = try ACLRuleOrdering(json: JSONValue.parse(await request(
+            "PUT", "\(site(siteID))/acl-rules/ordering", body: ordering.json.data(), resourceScoped: true
         )))
         guard applied == ordering else { throw NetworkAPIError.incompatibleResponse }
     }
