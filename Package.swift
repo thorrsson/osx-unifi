@@ -1,5 +1,10 @@
 // swift-tools-version: 5.9
+import Foundation
 import PackageDescription
+
+/// The Mac App Store build is sandboxed and updated by the App Store, so it leaves out Sparkle.
+let appStore = ProcessInfo.processInfo.environment["UNIFI_APP_STORE"] == "1"
+let appStoreSettings: [SwiftSetting] = appStore ? [.define("APP_STORE")] : []
 
 let package = Package(
     name: "UniFiDesktop",
@@ -14,12 +19,13 @@ let package = Package(
         .target(name: "UniFiCore"),
         .executableTarget(
             name: "UniFiDesktop",
-            dependencies: ["UniFiCore", "Sparkle"],
+            dependencies: appStore ? ["UniFiCore"] : ["UniFiCore", "Sparkle"],
+            swiftSettings: appStoreSettings,
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .testTarget(name: "UniFiCoreTests", dependencies: ["UniFiCore"]),
-        .testTarget(name: "UniFiDesktopTests", dependencies: ["UniFiDesktop"])
+        .testTarget(name: "UniFiDesktopTests", dependencies: ["UniFiDesktop"], swiftSettings: appStoreSettings)
     ]
 )

@@ -18,23 +18,7 @@ cp "$bin_path/UniFiDesktop" "$app/Contents/MacOS/UniFiDesktop"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app/Contents/Info.plist"
-# The Icon Composer document compiles to Assets.car (the layered icon macOS 26 renders) plus a flat
-# AppIcon.icns fallback; actool also names both in a partial plist that is merged into Info.plist.
-icon="Resources/AppIcon.icon"
-[[ -d "$icon" ]] || die "Missing $icon."
-require_xcode
-icon_plist="$(mktemp -t unifi-icon-plist)"
-trap 'rm -f "$icon_plist"' EXIT
-deployment_target="$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$app/Contents/Info.plist")"
-if ! icon_log="$(xcrun actool "$icon" --compile "$app/Contents/Resources" --app-icon AppIcon \
-        --output-partial-info-plist "$icon_plist" --platform macosx \
-        --minimum-deployment-target "$deployment_target" --errors --warnings 2>&1)"; then
-    printf '%s\n' "$icon_log" >&2
-    die "actool could not compile $icon."
-fi
-[[ -f "$app/Contents/Resources/Assets.car" && -f "$app/Contents/Resources/AppIcon.icns" ]] \
-    || die "actool did not produce Assets.car and AppIcon.icns from $icon."
-/usr/libexec/PlistBuddy -c "Merge $icon_plist" "$app/Contents/Info.plist"
+compile_icon "$app"
 public_key="${UNIFI_SPARKLE_PUBLIC_ED_KEY:-}"
 # An explicitly empty override disables updates in local-only artifacts.
 if [[ -z "${UNIFI_SPARKLE_PUBLIC_ED_KEY+x}" && -f Resources/sparkle_ed_public_key.txt ]]; then

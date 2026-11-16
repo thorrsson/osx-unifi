@@ -4,7 +4,9 @@ import UniFiCore
 @main
 struct UniFiDesktopApp: App {
     @StateObject private var model = NetworkModel()
+    #if !APP_STORE
     @StateObject private var updater = UpdaterModel()
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -12,12 +14,14 @@ struct UniFiDesktopApp: App {
                 .frame(minWidth: 960, minHeight: 620)
         }
         .defaultSize(width: 1280, height: 820)
+        #if !APP_STORE
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates...") { updater.checkForUpdates() }
                     .disabled(!updater.canCheckForUpdates)
             }
         }
+        #endif
         Settings {
             Form {
                 Section("Dashboard") {
@@ -27,6 +31,7 @@ struct UniFiDesktopApp: App {
                     Text("Applies while the Dashboard is open. Other counts update when you refresh.")
                         .font(.caption)
                 }
+                #if !APP_STORE
                 Section("Software Updates") {
                     if updater.isConfigured {
                         Toggle("Automatically check for updates", isOn: $updater.automaticallyChecks)
@@ -44,6 +49,7 @@ struct UniFiDesktopApp: App {
                         Text("Updates are unavailable in this build. A signed release must include its HTTPS update feed and Ed25519 public key.")
                     }
                 }
+                #endif
             }
             .formStyle(.grouped)
             .frame(width: 480)
